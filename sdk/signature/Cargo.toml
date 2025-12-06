@@ -1,0 +1,7 @@
+[package]
+name = "zelana-signature"
+description = "Zelana Signature type"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
