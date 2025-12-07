@@ -1,0 +1,8 @@
+[package]
+name = "zelana-pubkey"
+description = "Zelana Pubkey type"
+version = {workspace = true}
+edition = {workspace = true}
+
+[dependencies]
+serde = { workspace = true}

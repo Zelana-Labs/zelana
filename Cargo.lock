@@ -2749,6 +2749,11 @@ dependencies = [
  "solana-system-interface",
  "sqlx",
  "tokio",
+ "zelana-account",
+ "zelana-block",
+ "zelana-pubkey",
+ "zelana-signature",
+ "zelana-transaction",
 ]
 
 [[package]]
@@ -6811,8 +6816,51 @@ dependencies = [
 ]
 
 [[package]]
+name = "zelana-account"
+version = "0.1.0"
+dependencies = [
+ "serde",
+]
+
+[[package]]
+name = "zelana-block"
+version = "0.1.0"
+dependencies = [
+ "byteorder",
+ "hex",
+ "serde",
+]
+
+[[package]]
+name = "zelana-pubkey"
+version = "0.1.0"
+dependencies = [
+ "serde",
+]
+
+[[package]]
 name = "zelana-sdk"
 version = "0.1.0"
+dependencies = [
+ "serde",
+]
+
+[[package]]
+name = "zelana-signature"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_bytes",
+]
+
+[[package]]
+name = "zelana-transaction"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "zelana-pubkey",
+ "zelana-signature",
+]
 
 [[package]]
 name = "zerocopy"

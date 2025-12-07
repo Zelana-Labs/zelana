@@ -1,0 +1,10 @@
+[package]
+name = "zelana-block"
+description = "Zelana Block type"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+serde = { workspace = true}
+hex = {workspace = true}
+byteorder = "1.5"
