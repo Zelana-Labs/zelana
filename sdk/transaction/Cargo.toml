@@ -8,3 +8,4 @@ edition = {workspace = true}
 serde = { workspace = true}
 zelana-signature = {workspace = true}
 zelana-pubkey = {workspace = true}
+wincode_derive = {workspace = true}
