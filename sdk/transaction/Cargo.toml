@@ -1,14 +1,14 @@
 [package]
 name = "zelana-transaction"
 description = "Zelana Transaction type"
-version = {workspace = true}
-edition = {workspace = true}
+version = { workspace = true }
+edition = { workspace = true }
 
 [dependencies]
-serde = { workspace = true}
-zelana-signature = {workspace = true}
-zelana-pubkey = {workspace = true}
-zelana-account = {workspace = true}
-wincode = {workspace = true}
-wincode-derive = {workspace = true}
-thiserror = {workspace = true}
+serde = { workspace = true }
+thiserror = { workspace = true }
+zelana-account = { workspace = true }
+zelana-pubkey = { workspace = true }
+zelana-signature = { workspace = true }
+wincode = { workspace = true }
+wincode-derive = { workspace = true }

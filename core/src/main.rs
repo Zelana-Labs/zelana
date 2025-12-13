@@ -1,16 +1,13 @@
-use anyhow::{Result, bail};
 use core::sequencer::executor::TransactionExecutor;
-use log::{debug, error, info, warn};
-use core::sequencer::session::{SessionKeys, SessionManager};
 use core::sequencer::ingest;
+use core::sequencer::session::{SessionKeys, SessionManager};
+use log::{debug, error, info, warn};
 use std::{env, sync::Arc};
 use tokio::net::UdpSocket;
-use x25519_dalek::{PublicKey};
-use zelana_transaction::{
-    SignedTransaction, TransactionType,
-};
+use x25519_dalek::PublicKey;
+use zelana_transaction::{SignedTransaction, TransactionType};
 use zephyr::EphemeralKeyPair;
-use zephyr::packet::{KIND_APP_DATA, KIND_CLIENT_HELLO, KIND_SERVER_HELLO, Packet};
+use zephyr::packet::{KIND_SERVER_HELLO, Packet};
 
 const MAX_DATAGRAM_SIZE: usize = 1500; // Standard MTU safe limit
 

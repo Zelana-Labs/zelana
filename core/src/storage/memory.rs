@@ -1,8 +1,8 @@
-use std::collections::HashMap;
-use zelana_account::{AccountId, AccountState};
-use crate::storage::{StateStore};
+use crate::storage::StateStore;
 use anyhow::Result;
 use blake3::Hasher;
+use std::collections::HashMap;
+use zelana_account::{AccountId, AccountState};
 
 /// A lightweight, verifiable state store.
 /// Used by the Prover (Guest) AND the Batch Generator (Host).
@@ -15,10 +15,13 @@ impl ZkMemStore {
     pub fn new(witness: HashMap<AccountId, AccountState>) -> Self {
         let mut accounts = HashMap::new();
         for (id, data) in witness {
-            accounts.insert(id, AccountState {
-                balance: data.balance,
-                nonce: data.nonce,
-            });
+            accounts.insert(
+                id,
+                AccountState {
+                    balance: data.balance,
+                    nonce: data.nonce,
+                },
+            );
         }
         Self { accounts }
     }
@@ -28,7 +31,7 @@ impl ZkMemStore {
     pub fn compute_root(&self) -> [u8; 32] {
         // 1. Collect all entries
         let mut entries: Vec<(&AccountId, &AccountState)> = self.accounts.iter().collect();
-        
+
         // 2. Sort by ID (Critical for determinism)
         entries.sort_by_key(|(id, _)| id.0);
 
@@ -39,7 +42,7 @@ impl ZkMemStore {
             hasher.update(&state.balance.to_le_bytes());
             hasher.update(&state.nonce.to_le_bytes());
         }
-        
+
         hasher.finalize().into()
     }
 }

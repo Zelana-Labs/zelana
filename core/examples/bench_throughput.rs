@@ -1,7 +1,7 @@
 use std::time::Instant;
 use zelana_keypair::Keypair;
-use zephyr::client::ZelanaClient;
 use zelana_transaction::TransactionData;
+use zephyr::client::ZelanaClient;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {

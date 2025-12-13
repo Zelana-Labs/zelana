@@ -1,12 +1,12 @@
 use {
-    anyhow::{anyhow, Context, Result},
+    crate::keys::{EphemeralKeyPair, SessionKeys},
+    crate::packet::{KIND_APP_DATA, KIND_CLIENT_HELLO, Packet},
+    anyhow::{Context, Result, anyhow},
     tokio::{
         net::UdpSocket,
-        time::{timeout, Duration},
+        time::{Duration, timeout},
     },
-    zelana_transaction::{TransactionType, SignedTransaction},
-        crate::packet::{Packet, KIND_APP_DATA, KIND_CLIENT_HELLO}, 
-        crate::keys::{EphemeralKeyPair, SessionKeys},
+    zelana_transaction::{SignedTransaction, TransactionType},
 };
 
 pub struct ZelanaClient {

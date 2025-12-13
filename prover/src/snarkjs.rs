@@ -1,15 +1,15 @@
-use ark_bn254::{Bn254, Fr, G1Affine, G2Affine, Fq, Fq2};
-use ark_ff::PrimeField;
-use ark_groth16::{Groth16, VerifyingKey, Proof};
-use ark_relations::r1cs::{ConstraintSynthesizer, ConstraintSystemRef, SynthesisError};
-use ark_r1cs_std::{alloc::AllocVar, eq::EqGadget, fields::fp::FpVar};
-use ark_snark::SNARK;
-use ark_std::rand::{rngs::StdRng, SeedableRng};
-use ark_serialize::{CanonicalSerialize, CanonicalDeserialize};
+use ark_bn254::{Bn254, Fq, Fq2, Fr, G1Affine, G2Affine};
 use ark_ec::AffineRepr;
+use ark_ff::PrimeField;
+use ark_groth16::{Groth16, Proof, VerifyingKey};
+use ark_r1cs_std::{alloc::AllocVar, eq::EqGadget, fields::fp::FpVar};
+use ark_relations::r1cs::{ConstraintSynthesizer, ConstraintSystemRef, SynthesisError};
+use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
+use ark_snark::SNARK;
+use ark_std::rand::{SeedableRng, rngs::StdRng};
 
-use serde::{Serialize, Deserialize};
-use base64::{engine::general_purpose::STANDARD, Engine as _};
+use base64::{Engine as _, engine::general_purpose::STANDARD};
+use serde::{Deserialize, Serialize};
 
 #[derive(Clone)]
 struct SquareCircuit {
@@ -32,15 +32,21 @@ impl ConstraintSynthesizer<Fr> for SquareCircuit {
 /* ------------ Base64 JSON exports (compact) ------------ */
 
 #[derive(Serialize, Deserialize)]
-struct ProofJson { proof: String } // base64 (compressed)
+struct ProofJson {
+    proof: String,
+} // base64 (compressed)
 
 #[derive(Serialize, Deserialize)]
-struct VkJson { verifying_key: String } // base64 (compressed)
+struct VkJson {
+    verifying_key: String,
+} // base64 (compressed)
 
 fn export_proof_json(proof: &Proof<Bn254>, path: &str) -> Result<(), Box<dyn std::error::Error>> {
     let mut bytes = Vec::new();
     proof.serialize_compressed(&mut bytes)?;
-    let json = ProofJson { proof: STANDARD.encode(&bytes) };
+    let json = ProofJson {
+        proof: STANDARD.encode(&bytes),
+    };
     std::fs::write(path, serde_json::to_string_pretty(&json)?)?;
     Ok(())
 }
@@ -48,7 +54,9 @@ fn export_proof_json(proof: &Proof<Bn254>, path: &str) -> Result<(), Box<dyn std
 fn export_vk_json(vk: &VerifyingKey<Bn254>, path: &str) -> Result<(), Box<dyn std::error::Error>> {
     let mut bytes = Vec::new();
     vk.serialize_compressed(&mut bytes)?;
-    let json = VkJson { verifying_key: STANDARD.encode(&bytes) };
+    let json = VkJson {
+        verifying_key: STANDARD.encode(&bytes),
+    };
     std::fs::write(path, serde_json::to_string_pretty(&json)?)?;
     Ok(())
 }
@@ -58,16 +66,16 @@ fn export_vk_json(vk: &VerifyingKey<Bn254>, path: &str) -> Result<(), Box<dyn st
 
 #[derive(Serialize)]
 struct SnarkJsVk {
-    protocol: &'static str,    // "groth16"
-    curve: &'static str,       // "bn128"
+    protocol: &'static str, // "groth16"
+    curve: &'static str,    // "bn128"
     nPublic: usize,
-    vk_alpha_1: [String; 3],   // G1
-    vk_beta_2: [[String; 2]; 3],   // G2
-    vk_gamma_2: [[String; 2]; 3],  // G2
-    vk_delta_2: [[String; 2]; 3],  // G2
-    IC: Vec<[String; 3]>,      // G1 array, length = nPublic + 1
-    // Note: snarkjs often also includes vk_alphabeta_12 (pairing precompute).
-    // We omit it; verifiers can compute it when needed.
+    vk_alpha_1: [String; 3],      // G1
+    vk_beta_2: [[String; 2]; 3],  // G2
+    vk_gamma_2: [[String; 2]; 3], // G2
+    vk_delta_2: [[String; 2]; 3], // G2
+    IC: Vec<[String; 3]>,         // G1 array, length = nPublic + 1
+                                  // Note: snarkjs often also includes vk_alphabeta_12 (pairing precompute).
+                                  // We omit it; verifiers can compute it when needed.
 }
 
 /* Helpers: convert field elements to decimal strings, and points to snarkjs arrays. */
@@ -86,7 +94,11 @@ fn fq2_to_pair_snarkjs(x: &Fq2) -> [String; 2] {
 fn g1_to_snarkjs(p: &G1Affine) -> [String; 3] {
     let p = p.into_group(); // ensure normalized
     let aff = G1Affine::from(p);
-    [fq_to_decimal(&aff.x), fq_to_decimal(&aff.y), "1".to_string()]
+    [
+        fq_to_decimal(&aff.x),
+        fq_to_decimal(&aff.y),
+        "1".to_string(),
+    ]
 }
 
 fn g2_to_snarkjs(p: &G2Affine) -> [[String; 2]; 3] {
@@ -98,7 +110,10 @@ fn g2_to_snarkjs(p: &G2Affine) -> [[String; 2]; 3] {
     [x, y, z]
 }
 
-fn export_vk_snarkjs_json(vk: &VerifyingKey<Bn254>, path: &str) -> Result<(), Box<dyn std::error::Error>> {
+fn export_vk_snarkjs_json(
+    vk: &VerifyingKey<Bn254>,
+    path: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
     let n_public = vk.gamma_abc_g1.len() - 1;
 
     let mut ic: Vec<[String; 3]> = Vec::with_capacity(vk.gamma_abc_g1.len());
@@ -111,7 +126,7 @@ fn export_vk_snarkjs_json(vk: &VerifyingKey<Bn254>, path: &str) -> Result<(), Bo
         curve: "bn128",
         nPublic: n_public,
         vk_alpha_1: g1_to_snarkjs(&vk.alpha_g1),
-        vk_beta_2:  g2_to_snarkjs(&vk.beta_g2),
+        vk_beta_2: g2_to_snarkjs(&vk.beta_g2),
         vk_gamma_2: g2_to_snarkjs(&vk.gamma_g2),
         vk_delta_2: g2_to_snarkjs(&vk.delta_g2),
         IC: ic,
@@ -129,7 +144,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let y_val = x_val * x_val; // 49
 
     // circuit
-    let circuit = SquareCircuit { x: Some(x_val), y: Some(y_val) };
+    let circuit = SquareCircuit {
+        x: Some(x_val),
+        y: Some(y_val),
+    };
 
     // deterministic RNG for demo reproducibility
     let mut rng = StdRng::seed_from_u64(42);

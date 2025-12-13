@@ -6,39 +6,42 @@ use ark_bn254::{Bn254, Fr, FrConfig, G1Affine, G2Affine};
 // We need ProvingKey and VerifyingKey for setup/loading, even if prove is simulated
 use ark_groth16::{Groth16, Proof, ProvingKey, VerifyingKey};
 use ark_r1cs_std::fields::fp::FpVar;
-use ark_snark::SNARK;
-use ark_std::rand::{rngs::StdRng, SeedableRng};
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize}; // For loading keys
-use base64::{engine::general_purpose::STANDARD, Engine as _};
+use ark_snark::SNARK;
+use ark_std::rand::{SeedableRng, rngs::StdRng};
+use base64::{Engine as _, engine::general_purpose::STANDARD};
 use dotenvy::dotenv;
 use l2_circuit::{L2BlockCircuit, PubkeyBytes, TransactionWitness};
 // use rollup_core::{
 //      db::Storage,
 //      types::{Account, BlockHeader, HEADER_SIZE, Pubkey, TransactionType,Transaction},
 //  };
-use rocksdb::{DBWithThreadMode, IteratorMode, MultiThreaded, ReadOptions};
-use serde::{Serialize, Deserialize};
-use solana_client::nonblocking::rpc_client::RpcClient;
-use solana_sdk::{message::{AccountMeta, Instruction}, signer,};
-use sqlx::{sqlite::SqlitePoolOptions, Row, SqlitePool};
-use std::{collections::BTreeMap, env, fs, path::Path, sync::Arc, time::Duration};
-use ark_ff::{BigInteger, Fp, PrimeField}; // For conversions
-use ark_crypto_primitives::sponge::{
-    poseidon::{PoseidonConfig, PoseidonSponge},
-    CryptographicSponge,
-};
 use ark_crypto_primitives::sponge::poseidon::find_poseidon_ark_and_mds;
+use ark_crypto_primitives::sponge::{
+    CryptographicSponge,
+    poseidon::{PoseidonConfig, PoseidonSponge},
+};
 use ark_ec::AffineRepr;
-use solana_sdk::signature::Signer;
-use solana_sdk::pubkey::Pubkey as SolanaPubkey;
-use solana_sdk::transaction::Transaction as SolanaTransaction;
+use ark_ff::{BigInteger, Fp, PrimeField}; // For conversions
+use rocksdb::{DBWithThreadMode, IteratorMode, MultiThreaded, ReadOptions};
+use serde::{Deserialize, Serialize};
+use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_commitment_config::CommitmentConfig;
+use solana_sdk::pubkey::Pubkey as SolanaPubkey;
+use solana_sdk::signature::Signer;
+use solana_sdk::transaction::Transaction as SolanaTransaction;
+use solana_sdk::{
+    message::{AccountMeta, Instruction},
+    signer,
+};
 use solana_system_interface::program::ID;
-use zelana_transaction::{Transaction, TransactionType};
-use zelana_signature::Signature;
-use zelana_pubkey::Pubkey;
+use sqlx::{Row, SqlitePool, sqlite::SqlitePoolOptions};
+use std::{collections::BTreeMap, env, fs, path::Path, sync::Arc, time::Duration};
 use zelana_account::AccountId;
-use zelana_block::{BlockHeader};
+use zelana_block::BlockHeader;
+use zelana_pubkey::Pubkey;
+use zelana_signature::Signature;
+use zelana_transaction::{Transaction, TransactionType};
 
 // Get this Pubkey from where you deployed your onchain_verifier program
 const ONCHAIN_VERIFIER_PROGRAM_ID: &str = "6qPEb6x1oGhd2pf1UP3bgMWa7NspSNryzrA6ZCdsbFwT"; // Replace if different
@@ -46,43 +49,52 @@ const ONCHAIN_VERIFIER_PROGRAM_ID: &str = "6qPEb6x1oGhd2pf1UP3bgMWa7NspSNryzrA6Z
 const SETTLER_KEYPAIR_PATH: &str = "home/shanks/.config/solana/id.json"; // Example path
 // ====================================================================
 
-
-#[derive(Serialize)] struct ProofJson { proof: String }
+#[derive(Serialize)]
+struct ProofJson {
+    proof: String,
+}
 fn export_proof_json(proof: &Proof<Bn254>, path: &str) -> Result<(), Box<dyn std::error::Error>> {
     let mut bytes = Vec::new();
     proof.serialize_compressed(&mut bytes)?;
-    let json = ProofJson { proof: STANDARD.encode(&bytes) };
+    let json = ProofJson {
+        proof: STANDARD.encode(&bytes),
+    };
     fs::write(path, serde_json::to_string_pretty(&json)?)?;
     Ok(())
 }
-#[derive(Serialize)] struct VkJson { verifying_key: String }
+#[derive(Serialize)]
+struct VkJson {
+    verifying_key: String,
+}
 fn export_vk_json(vk: &VerifyingKey<Bn254>, path: &str) -> Result<(), Box<dyn std::error::Error>> {
     let mut bytes = Vec::new();
     vk.serialize_compressed(&mut bytes)?;
-    let json = VkJson { verifying_key: STANDARD.encode(&bytes) };
+    let json = VkJson {
+        verifying_key: STANDARD.encode(&bytes),
+    };
     fs::write(path, serde_json::to_string_pretty(&json)?)?;
     Ok(())
 }
 
- // --- Poseidon Parameters (MUST MATCH CIRCUIT'S get_poseidon_config EXACTLY) ---
- fn get_poseidon_config_offchain() -> PoseidonConfig<Fr> {
-     // Replicate the exact parameter generation logic from l2_circuit.rs
-     let full_rounds = 8;
-     let partial_rounds = 56;
-     let alpha = 5u64;
-     let rate = 2; // Arity 2
-     let capacity = 1;
-     // Adjust signature based on arkworks 0.4 `find_poseidon_ark_and_mds`
-     let (ark, mds) = find_poseidon_ark_and_mds::<Fr>(
-         Fr::MODULUS_BIT_SIZE as u64, // Field size
-         rate , // Rate
-         full_rounds as u64,
-         partial_rounds as u64,
-         0, // skip_matrices
-     );
-     // Adjust signature based on arkworks 0.4 `PoseidonConfig::new`
-     PoseidonConfig::new(full_rounds, partial_rounds, alpha, mds, ark, rate, capacity)
- }
+// --- Poseidon Parameters (MUST MATCH CIRCUIT'S get_poseidon_config EXACTLY) ---
+fn get_poseidon_config_offchain() -> PoseidonConfig<Fr> {
+    // Replicate the exact parameter generation logic from l2_circuit.rs
+    let full_rounds = 8;
+    let partial_rounds = 56;
+    let alpha = 5u64;
+    let rate = 2; // Arity 2
+    let capacity = 1;
+    // Adjust signature based on arkworks 0.4 `find_poseidon_ark_and_mds`
+    let (ark, mds) = find_poseidon_ark_and_mds::<Fr>(
+        Fr::MODULUS_BIT_SIZE as u64, // Field size
+        rate,                        // Rate
+        full_rounds as u64,
+        partial_rounds as u64,
+        0, // skip_matrices
+    );
+    // Adjust signature based on arkworks 0.4 `PoseidonConfig::new`
+    PoseidonConfig::new(full_rounds, partial_rounds, alpha, mds, ark, rate, capacity)
+}
 
 // --- Off-Chain State Root Calculation (AccountsFoldHashV1) ---
 // This function MUST perfectly mirror the logic implemented inside the circuit's constraints.
@@ -91,176 +103,218 @@ fn calculate_new_root_offchain(
     batch_id: u64,
     final_accounts: &BTreeMap<PubkeyBytes, u64>, // Final balances after applying txs
 ) -> Result<[u8; 32]> {
-   let mut sponge = PoseidonSponge::new(poseidon_config);
-     let ds_fr = Fr::from_le_bytes_mod_order(b"zelana:accounts-fold:v1");
-     let batch_id_fr = Fr::from(batch_id);
+    let mut sponge = PoseidonSponge::new(poseidon_config);
+    let ds_fr = Fr::from_le_bytes_mod_order(b"zelana:accounts-fold:v1");
+    let batch_id_fr = Fr::from(batch_id);
     let inputs = [ds_fr, batch_id_fr];
     sponge.absorb(&inputs.as_slice());
 
-     let mut current_state_fr = sponge.squeeze_field_elements(1).remove(0);
- 
-     for (pk_bytes, balance_u64) in final_accounts.iter() {
-         let pk_fr = Fr::from_le_bytes_mod_order(pk_bytes);
-         let balance_fr = Fr::from(*balance_u64);
-         let mut leaf_sponge = PoseidonSponge::new(poseidon_config);
+    let mut current_state_fr = sponge.squeeze_field_elements(1).remove(0);
+
+    for (pk_bytes, balance_u64) in final_accounts.iter() {
+        let pk_fr = Fr::from_le_bytes_mod_order(pk_bytes);
+        let balance_fr = Fr::from(*balance_u64);
+        let mut leaf_sponge = PoseidonSponge::new(poseidon_config);
         let leaf_inputs = [pk_fr, balance_fr];
-         leaf_sponge.absorb(&leaf_inputs.as_slice());
-         let leaf_hash_fr = leaf_sponge.squeeze_field_elements(1).remove(0);
-         let mut fold_sponge = PoseidonSponge::new(poseidon_config);
-         let fold_inputs = [current_state_fr,leaf_hash_fr];
-         fold_sponge.absorb(&fold_inputs.as_slice());
-         current_state_fr = fold_sponge.squeeze_field_elements(1).remove(0);
-     }
- 
-     let account_count_fr = Fr::from(final_accounts.len() as u64);
-     let mut final_sponge = PoseidonSponge::new(poseidon_config);
-     let final_inputs = [current_state_fr,account_count_fr];
-     final_sponge.absorb(&final_inputs.as_slice());
-     let final_root_fr:Fp<ark_ff::MontBackend<FrConfig, 4>, 4> = final_sponge.squeeze_field_elements(1).remove(0);
- 
-     // Convert Fr to bytes (Little Endian)
-     let bytes_le = final_root_fr.into_bigint().to_bytes_le();
-     let mut root_bytes = [0u8; 32];
-     // Ensure correct padding/truncation if byte length differs from 32
-     let copy_len = std::cmp::min(bytes_le.len(), 32);
-     root_bytes[..copy_len].copy_from_slice(&bytes_le[..copy_len]);
-     Ok(root_bytes)
+        leaf_sponge.absorb(&leaf_inputs.as_slice());
+        let leaf_hash_fr = leaf_sponge.squeeze_field_elements(1).remove(0);
+        let mut fold_sponge = PoseidonSponge::new(poseidon_config);
+        let fold_inputs = [current_state_fr, leaf_hash_fr];
+        fold_sponge.absorb(&fold_inputs.as_slice());
+        current_state_fr = fold_sponge.squeeze_field_elements(1).remove(0);
+    }
+
+    let account_count_fr = Fr::from(final_accounts.len() as u64);
+    let mut final_sponge = PoseidonSponge::new(poseidon_config);
+    let final_inputs = [current_state_fr, account_count_fr];
+    final_sponge.absorb(&final_inputs.as_slice());
+    let final_root_fr: Fp<ark_ff::MontBackend<FrConfig, 4>, 4> =
+        final_sponge.squeeze_field_elements(1).remove(0);
+
+    // Convert Fr to bytes (Little Endian)
+    let bytes_le = final_root_fr.into_bigint().to_bytes_le();
+    let mut root_bytes = [0u8; 32];
+    // Ensure correct padding/truncation if byte length differs from 32
+    let copy_len = std::cmp::min(bytes_le.len(), 32);
+    root_bytes[..copy_len].copy_from_slice(&bytes_le[..copy_len]);
+    Ok(root_bytes)
 }
 
- const POLL_INTERVAL_SECONDS: u64 = 10;
- const SIMULATED_PROVING_TIME_SECONDS: u64 = 5;
- const SIMULATED_SETTLEMENT_TIME_SECONDS: u64 = 2;
- const PROVING_KEY_PATH: &str = "l2_circuit_real_hash.pk"; // Use new names
- const VERIFYING_KEY_PATH: &str = "l2_circuit_real_hash.vk";
- 
+const POLL_INTERVAL_SECONDS: u64 = 10;
+const SIMULATED_PROVING_TIME_SECONDS: u64 = 5;
+const SIMULATED_SETTLEMENT_TIME_SECONDS: u64 = 2;
+const PROVING_KEY_PATH: &str = "l2_circuit_real_hash.pk"; // Use new names
+const VERIFYING_KEY_PATH: &str = "l2_circuit_real_hash.vk";
+
 #[tokio::main]
 async fn main() -> Result<()> {
     dotenv().ok();
-     println!("🚀 === Zelana L2 Prover Service (Real Commitment Circuit) ===\n");
- 
-     let l2_db_dir = env::var("L2_DB_PATH").context("L2_DB_PATH not set")?;
-     let rocks_path_str = format!("{}/rocksdb", l2_db_dir);
-     let sqlite_path_str = format!("{}/checkpoints.db", l2_db_dir);
-     println!("   L2 DB Path: {}", l2_db_dir);
- 
-     let sqlite_pool = SqlitePoolOptions::new().max_connections(1)
-         .connect(&format!("sqlite:{}", sqlite_path_str)).await?;
-     let mut db_opts = rocksdb::Options::default();
-     db_opts.create_if_missing(false);
-     let rocksdb = Arc::new(DBWithThreadMode::<MultiThreaded>::open_cf_for_read_only(
-         &db_opts, 
-         &rocks_path_str, 
-         // should be rollup_core::db::CF_NAMES
-         &["accounts", "txs", "batches", "tx_by_sender", "tx_by_time"], 
-         false)?
-        );
-     println!("   ✅ Connected to L2 databases.");
- 
-     let poseidon_config = get_poseidon_config_offchain();
-     println!("   ✅ Loaded Poseidon parameters.");
- 
-     // --- Load or Generate Proving Key FOR THE NEW CIRCUIT ---
-     let pk = load_or_generate_proving_key(PROVING_KEY_PATH, VERIFYING_KEY_PATH, &poseidon_config).await?;
-     println!("   ✅ Loaded/Generated proving key for the current circuit.");
- 
-     println!("\nPolling for pending batches...");
-     loop {
-         match find_and_process_pending_batch(&rocksdb, &sqlite_pool, &pk, &poseidon_config).await {
-             Ok(Some(id)) => println!("   ✅ Batch {} processed.", id),
-             Ok(None) => tokio::time::sleep(Duration::from_secs(POLL_INTERVAL_SECONDS)).await,
-             Err(e) => {
-                 eprintln!("   ❌ Error: {:?}. Retrying...", e);
-                 tokio::time::sleep(Duration::from_secs(POLL_INTERVAL_SECONDS)).await;
-             }
-         }
-     }
+    println!("🚀 === Zelana L2 Prover Service (Real Commitment Circuit) ===\n");
+
+    let l2_db_dir = env::var("L2_DB_PATH").context("L2_DB_PATH not set")?;
+    let rocks_path_str = format!("{}/rocksdb", l2_db_dir);
+    let sqlite_path_str = format!("{}/checkpoints.db", l2_db_dir);
+    println!("   L2 DB Path: {}", l2_db_dir);
+
+    let sqlite_pool = SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect(&format!("sqlite:{}", sqlite_path_str))
+        .await?;
+    let mut db_opts = rocksdb::Options::default();
+    db_opts.create_if_missing(false);
+    let rocksdb = Arc::new(DBWithThreadMode::<MultiThreaded>::open_cf_for_read_only(
+        &db_opts,
+        &rocks_path_str,
+        // should be rollup_core::db::CF_NAMES
+        &["accounts", "txs", "batches", "tx_by_sender", "tx_by_time"],
+        false,
+    )?);
+    println!("   ✅ Connected to L2 databases.");
+
+    let poseidon_config = get_poseidon_config_offchain();
+    println!("   ✅ Loaded Poseidon parameters.");
+
+    // --- Load or Generate Proving Key FOR THE NEW CIRCUIT ---
+    let pk = load_or_generate_proving_key(PROVING_KEY_PATH, VERIFYING_KEY_PATH, &poseidon_config)
+        .await?;
+    println!("   ✅ Loaded/Generated proving key for the current circuit.");
+
+    println!("\nPolling for pending batches...");
+    loop {
+        match find_and_process_pending_batch(&rocksdb, &sqlite_pool, &pk, &poseidon_config).await {
+            Ok(Some(id)) => println!("   ✅ Batch {} processed.", id),
+            Ok(None) => tokio::time::sleep(Duration::from_secs(POLL_INTERVAL_SECONDS)).await,
+            Err(e) => {
+                eprintln!("   ❌ Error: {:?}. Retrying...", e);
+                tokio::time::sleep(Duration::from_secs(POLL_INTERVAL_SECONDS)).await;
+            }
+        }
+    }
 }
 
 async fn find_and_process_pending_batch(
     rocksdb: &Arc<DBWithThreadMode<MultiThreaded>>,
-     sqlite_pool: &SqlitePool,
-     pk: &ProvingKey<Bn254>,
-     poseidon_config: &PoseidonConfig<Fr>,
-)->Result<Option<u64>>{
-   let pending_batch: Option<(i64,)> = sqlx::query_as(
-         "SELECT id FROM batches WHERE proof_status = 'Pending' ORDER BY id ASC LIMIT 1",
-     )
-     .fetch_optional(sqlite_pool).await?;
-     let batch_id = match pending_batch { Some((id,)) => id as u64, None => return Ok(None) };
-     println!("\n--- Found Pending Batch {} ---", batch_id);
- 
-     let cf_batches = rocksdb.cf_handle("batches").context("Batches CF missing")?;
-     let header_bytes = rocksdb.get_cf(&cf_batches, batch_id.to_be_bytes())?.context("Header missing")?;
-     let header = BlockHeader::from_bytes(header_bytes.as_slice().try_into()?)?;
-     println!("   Header: PrevRoot={}, NewRoot={}", hex::encode(header.prev_root), hex::encode(header.new_root));
- 
-     let transactions = fetch_transactions_for_batch(rocksdb, batch_id).await?;
-     println!("   Fetched {} transactions.", transactions.len());
- 
-     println!("   Preparing circuit witness...");
-     let post_batch_accounts = fetch_all_accounts(rocksdb).await?;
-     let initial_accounts_witness = calculate_pre_state(&post_batch_accounts, &transactions);
-     let transactions_witness: Vec<TransactionWitness> = transactions.iter().filter_map(|tx| {
-         if let TransactionType::Transfer { amount } = tx.tx_type { Some(TransactionWitness { sender_pk: tx.sender.0, recipient_pk: tx.recipient.0, amount }) } else { None }
-     }).collect();
- 
-     // --- Calculate Expected New Root (using REAL off-chain Poseidon logic) ---
-     let mut final_balances_witness = initial_accounts_witness.clone();
-     for tx_w in &transactions_witness {
-         if let Some(bal) = final_balances_witness.get_mut(&tx_w.sender_pk) { *bal = bal.saturating_sub(tx_w.amount); }
-         *final_balances_witness.entry(tx_w.recipient_pk).or_insert(0) += tx_w.amount;
-     }
-     // Use the off-chain Poseidon calculation function
-     let calculated_new_root_bytes = calculate_new_root_offchain(poseidon_config, batch_id, &final_balances_witness)?;
- 
-     // Sanity Check: Ensure off-chain calculation matches the root stored in the header
-     if calculated_new_root_bytes != header.new_root {
-         anyhow::bail!(
-             "FATAL MISMATCH: Off-chain calculated new_root ({}) differs from header new_root ({}). Check Poseidon params/logic in prover vs rollup-core.",
-             hex::encode(calculated_new_root_bytes), hex::encode(header.new_root)
-         );
-     }
-     println!("      ✅ Off-chain calculated new_root matches header.");
- 
-     // --- Simulate Proof Generation ---
-     println!("   SIMULATING: Generating Groth16 proof (takes ~{}s)...", SIMULATED_PROVING_TIME_SECONDS);
-     // ** ACTUAL PROVING CALL (Commented out for now) **
-     let circuit = L2BlockCircuit {
-          prev_root: Some(header.prev_root),
-          new_root: Some(calculated_new_root_bytes), // Use calculated REAL root
-          transactions: Some(transactions_witness),
-          initial_accounts: Some(initial_accounts_witness),
-          batch_id: Some(batch_id), // Pass batch_id to circuit
-          poseidon_config: poseidon_config.clone(), // Pass config to circuit
-     };
-     let mut rng = StdRng::seed_from_u64(batch_id);
-     let start_prove = std::time::Instant::now();
-     let proof = Groth16::<Bn254>::prove(&pk, circuit.clone(), &mut rng)?;
-     println!("   Proof generated in {:?}!", start_prove.elapsed());
-     export_proof_json(&proof, &format!("batch_{}_proof.json", batch_id)).unwrap();
-     // ** END REAL PROVING **
- 
+    sqlite_pool: &SqlitePool,
+    pk: &ProvingKey<Bn254>,
+    poseidon_config: &PoseidonConfig<Fr>,
+) -> Result<Option<u64>> {
+    let pending_batch: Option<(i64,)> = sqlx::query_as(
+        "SELECT id FROM batches WHERE proof_status = 'Pending' ORDER BY id ASC LIMIT 1",
+    )
+    .fetch_optional(sqlite_pool)
+    .await?;
+    let batch_id = match pending_batch {
+        Some((id,)) => id as u64,
+        None => return Ok(None),
+    };
+    println!("\n--- Found Pending Batch {} ---", batch_id);
+
+    let cf_batches = rocksdb.cf_handle("batches").context("Batches CF missing")?;
+    let header_bytes = rocksdb
+        .get_cf(&cf_batches, batch_id.to_be_bytes())?
+        .context("Header missing")?;
+    let header = BlockHeader::from_bytes(header_bytes.as_slice().try_into()?)?;
+    println!(
+        "   Header: PrevRoot={}, NewRoot={}",
+        hex::encode(header.prev_root),
+        hex::encode(header.new_root)
+    );
+
+    let transactions = fetch_transactions_for_batch(rocksdb, batch_id).await?;
+    println!("   Fetched {} transactions.", transactions.len());
+
+    println!("   Preparing circuit witness...");
+    let post_batch_accounts = fetch_all_accounts(rocksdb).await?;
+    let initial_accounts_witness = calculate_pre_state(&post_batch_accounts, &transactions);
+    let transactions_witness: Vec<TransactionWitness> = transactions
+        .iter()
+        .filter_map(|tx| {
+            if let TransactionType::Transfer { amount } = tx.tx_type {
+                Some(TransactionWitness {
+                    sender_pk: tx.sender.0,
+                    recipient_pk: tx.recipient.0,
+                    amount,
+                })
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    // --- Calculate Expected New Root (using REAL off-chain Poseidon logic) ---
+    let mut final_balances_witness = initial_accounts_witness.clone();
+    for tx_w in &transactions_witness {
+        if let Some(bal) = final_balances_witness.get_mut(&tx_w.sender_pk) {
+            *bal = bal.saturating_sub(tx_w.amount);
+        }
+        *final_balances_witness.entry(tx_w.recipient_pk).or_insert(0) += tx_w.amount;
+    }
+    // Use the off-chain Poseidon calculation function
+    let calculated_new_root_bytes =
+        calculate_new_root_offchain(poseidon_config, batch_id, &final_balances_witness)?;
+
+    // Sanity Check: Ensure off-chain calculation matches the root stored in the header
+    if calculated_new_root_bytes != header.new_root {
+        anyhow::bail!(
+            "FATAL MISMATCH: Off-chain calculated new_root ({}) differs from header new_root ({}). Check Poseidon params/logic in prover vs rollup-core.",
+            hex::encode(calculated_new_root_bytes),
+            hex::encode(header.new_root)
+        );
+    }
+    println!("      ✅ Off-chain calculated new_root matches header.");
+
+    // --- Simulate Proof Generation ---
+    println!(
+        "   SIMULATING: Generating Groth16 proof (takes ~{}s)...",
+        SIMULATED_PROVING_TIME_SECONDS
+    );
+    // ** ACTUAL PROVING CALL (Commented out for now) **
+    let circuit = L2BlockCircuit {
+        prev_root: Some(header.prev_root),
+        new_root: Some(calculated_new_root_bytes), // Use calculated REAL root
+        transactions: Some(transactions_witness),
+        initial_accounts: Some(initial_accounts_witness),
+        batch_id: Some(batch_id),                 // Pass batch_id to circuit
+        poseidon_config: poseidon_config.clone(), // Pass config to circuit
+    };
+    let mut rng = StdRng::seed_from_u64(batch_id);
+    let start_prove = std::time::Instant::now();
+    let proof = Groth16::<Bn254>::prove(&pk, circuit.clone(), &mut rng)?;
+    println!("   Proof generated in {:?}!", start_prove.elapsed());
+    export_proof_json(&proof, &format!("batch_{}_proof.json", batch_id)).unwrap();
+    // ** END REAL PROVING **
+
     //  tokio::time::sleep(Duration::from_secs(SIMULATED_PROVING_TIME_SECONDS)).await;
     //  let dummy_proof_data = format!("SIMULATED_PROOF_FOR_BATCH_{}", batch_id);
     //  println!("   Proof generated (Simulation)! Data: {}", dummy_proof_data);
- 
+
     //  // --- Simulate Settlement ---
     //  println!("\n--- SIMULATING SETTLEMENT ---");
     //  println!("   Public Inputs: PrevRoot={}, NewRoot={}", hex::encode(header.prev_root), hex::encode(calculated_new_root_bytes));
     //  // ... (rest of simulation logs) ...
     //  tokio::time::sleep(Duration::from_secs(SIMULATED_SETTLEMENT_TIME_SECONDS)).await;
     //  let l1_mock_sig = format!("MockSettlementTxSignatureForBatch{}", batch_id);
- 
+
     //  // --- Update Batch Status in SQLite ---
     //  let rows_affected = sqlx::query("UPDATE batches SET proof_status = 'Settled-Mock', l1_settlement_tx = ? WHERE id = ? AND proof_status = 'Pending'")
     //      .bind(&l1_mock_sig).bind(batch_id as i64).execute(sqlite_pool).await?.rows_affected();
- 
+
     //  if rows_affected == 1 { println!("   Updated L2 DB: Batch {}", batch_id); }
     //  else { eprintln!("   WARNING: Failed to update SQLite status for batch {}.", batch_id); }
     //  println!("--- SETTLEMENT SIMULATION COMPLETE ---");
-     match settle_on_l1(batch_id, header.prev_root, calculated_new_root_bytes, &proof).await {
+    match settle_on_l1(
+        batch_id,
+        header.prev_root,
+        calculated_new_root_bytes,
+        &proof,
+    )
+    .await
+    {
         Ok(l1_signature) => {
-            println!("   ✅ Successfully settled batch {} on L1. Signature: {}", batch_id, l1_signature);
+            println!(
+                "   ✅ Successfully settled batch {} on L1. Signature: {}",
+                batch_id, l1_signature
+            );
             // Update SQLite status to Settled-OnChain
             let rows_affected = sqlx::query("UPDATE batches SET proof_status = 'Settled-OnChain', l1_settlement_tx = ? WHERE id = ? AND proof_status = 'Pending'")
                 .bind(l1_signature.to_string())
@@ -272,13 +326,16 @@ async fn find_and_process_pending_batch(
             if rows_affected == 1 {
                 println!("   Updated L2 DB status for batch {}.", batch_id);
             } else {
-                eprintln!("   WARNING: Failed to update SQLite status for batch {}. Expected 1 row affected, got {}.", batch_id, rows_affected);
+                eprintln!(
+                    "   WARNING: Failed to update SQLite status for batch {}. Expected 1 row affected, got {}.",
+                    batch_id, rows_affected
+                );
             }
-        },
+        }
         Err(e) => {
             eprintln!("   ❌ FAILED to settle batch {} on L1: {:?}", batch_id, e);
             // Mark as failed in SQLite so we don't retry indefinitely
-             sqlx::query("UPDATE batches SET proof_status = 'SettlementFailed', error_message = ? WHERE id = ?")
+            sqlx::query("UPDATE batches SET proof_status = 'SettlementFailed', error_message = ? WHERE id = ?")
                  .bind(format!("L1 settlement error: {:?}", e))
                  .bind(batch_id as i64)
                  .execute(sqlite_pool)
@@ -287,7 +344,7 @@ async fn find_and_process_pending_batch(
             return Err(e);
         }
     }
-     Ok(Some(batch_id))
+    Ok(Some(batch_id))
 }
 
 /// Placeholder function to fetch transactions for a given batch.
@@ -296,7 +353,9 @@ async fn fetch_transactions_for_batch(
     batch_id: u64,
 ) -> Result<Vec<Transaction>> {
     let cf_txs = rocksdb.cf_handle("txs").context("txs CF not found")?;
-    let cf_index = rocksdb.cf_handle("tx_by_batch").context("tx_by_batch CF not found")?;
+    let cf_index = rocksdb
+        .cf_handle("tx_by_batch")
+        .context("tx_by_batch CF not found")?;
 
     let prefix = batch_id.to_be_bytes();
     let mut iter_opts = ReadOptions::default();
@@ -304,7 +363,11 @@ async fn fetch_transactions_for_batch(
     iter_opts.set_prefix_same_as_start(true);
     // For older versions or safety, you might iterate and check prefix manually.
 
-    let iter = rocksdb.iterator_cf_opt(&cf_index, iter_opts, IteratorMode::From(&prefix, rocksdb::Direction::Forward));
+    let iter = rocksdb.iterator_cf_opt(
+        &cf_index,
+        iter_opts,
+        IteratorMode::From(&prefix, rocksdb::Direction::Forward),
+    );
 
     let mut transactions = Vec::new();
     for item in iter {
@@ -315,21 +378,30 @@ async fn fetch_transactions_for_batch(
             break;
         }
 
-        if key.len() == 8 + 32 { // 8 bytes batch_id + 32 bytes signature
-             let signature_bytes = &key[8..];
-             match rocksdb.get_cf(&cf_txs, signature_bytes)? {
-                 Some(tx_bytes) => {
-                     match bincode::deserialize::<Transaction>(&tx_bytes) {
-                          Ok(tx) => transactions.push(tx),
-                          Err(e) => eprintln!("   Error deserializing tx {:?}: {}", hex::encode(signature_bytes), e),
-                     }
-                 }
-                 None => {
-                    eprintln!("   Warning: Tx signature {:?} in index but not found in txs table.", hex::encode(signature_bytes));
-                 }
-             }
+        if key.len() == 8 + 32 {
+            // 8 bytes batch_id + 32 bytes signature
+            let signature_bytes = &key[8..];
+            match rocksdb.get_cf(&cf_txs, signature_bytes)? {
+                Some(tx_bytes) => match bincode::deserialize::<Transaction>(&tx_bytes) {
+                    Ok(tx) => transactions.push(tx),
+                    Err(e) => eprintln!(
+                        "   Error deserializing tx {:?}: {}",
+                        hex::encode(signature_bytes),
+                        e
+                    ),
+                },
+                None => {
+                    eprintln!(
+                        "   Warning: Tx signature {:?} in index but not found in txs table.",
+                        hex::encode(signature_bytes)
+                    );
+                }
+            }
         } else {
-             eprintln!("   Warning: Malformed key found in tx_by_batch index: {:?}", hex::encode(&key));
+            eprintln!(
+                "   Warning: Malformed key found in tx_by_batch index: {:?}",
+                hex::encode(&key)
+            );
         }
     }
     Ok(transactions)
@@ -339,12 +411,16 @@ async fn fetch_transactions_for_batch(
 async fn fetch_all_accounts(
     rocksdb: &Arc<DBWithThreadMode<MultiThreaded>>,
 ) -> Result<BTreeMap<PubkeyBytes, Account>> {
-    let cf_accounts = rocksdb.cf_handle("accounts").context("Accounts CF not found")?;
+    let cf_accounts = rocksdb
+        .cf_handle("accounts")
+        .context("Accounts CF not found")?;
     let mut accounts = BTreeMap::new();
     let iter = rocksdb.iterator_cf(&cf_accounts, IteratorMode::Start);
     for item in iter {
         let (key_bytes, value_bytes) = item?;
-        let pubkey: PubkeyBytes = key_bytes.as_ref().try_into()
+        let pubkey: PubkeyBytes = key_bytes
+            .as_ref()
+            .try_into()
             .map_err(|_| anyhow::anyhow!("Invalid pubkey size in DB"))?;
         let account: Account = bincode::deserialize(&value_bytes)?;
         accounts.insert(pubkey, account);
@@ -361,7 +437,7 @@ fn calculate_pre_state(
     let mut pre_state_balances = BTreeMap::new();
     // Start with post-state balances
     for (pk, acc) in post_state {
-         pre_state_balances.insert(*pk, acc.balance);
+        pre_state_balances.insert(*pk, acc.balance);
     }
 
     // Reverse transactions (order matters if nonces were involved)
@@ -384,43 +460,52 @@ fn calculate_pre_state(
     pre_state_balances
 }
 
- /// Loads proving key, or generates if not found using the L2BlockCircuit.
- async fn load_or_generate_proving_key(
-      pk_path: &str,
-      vk_path: &str,
-      poseidon_config: &PoseidonConfig<Fr>, // Needed for dummy circuit
- ) -> Result<ProvingKey<Bn254>> {
-      if Path::new(pk_path).exists() && Path::new(vk_path).exists() { // Check both
-           println!("   Loading existing proving key from {}", pk_path);
-           let pk_bytes = fs::read(pk_path)?;
-           // Optional: Load VK too if needed later, though not strictly required for proving
-           // let vk_bytes = fs::read(vk_path)?;
-           // VerifyingKey::<Bn254>::deserialize_compressed(&*vk_bytes)?;
-           Ok(ProvingKey::<Bn254>::deserialize_compressed(&*pk_bytes)?)
-      } else {
-           println!("   Proving/Verifying key not found. Performing one-time setup for L2BlockCircuit...");
-           // Setup requires the exact Poseidon config the circuit uses
-           let config = poseidon_config.clone();
-           let dummy_circuit = L2BlockCircuit {
-                prev_root: Some([0;32]), new_root: Some([0;32]),
-                transactions: Some(vec![]), initial_accounts: Some(BTreeMap::new()),
-                batch_id: Some(0), poseidon_config: config, // Pass config
-           };
-           let mut rng = StdRng::seed_from_u64(0);
-           let start_setup = std::time::Instant::now();
-           let (pk, vk) = Groth16::<Bn254>::circuit_specific_setup(dummy_circuit, &mut rng)?;
-           println!("      Setup complete in {:?}", start_setup.elapsed());
-           // Save keys
-           let mut pk_bytes = Vec::new(); pk.serialize_compressed(&mut pk_bytes)?;
-           fs::write(pk_path, &pk_bytes)?; println!("      Saved proving key to {}", pk_path);
-           let mut vk_bytes = Vec::new(); vk.serialize_compressed(&mut vk_bytes)?;
-           fs::write(vk_path, &vk_bytes)?; println!("      Saved verifying key to {}", vk_path);
-           Ok(pk)
-      }
- }
+/// Loads proving key, or generates if not found using the L2BlockCircuit.
+async fn load_or_generate_proving_key(
+    pk_path: &str,
+    vk_path: &str,
+    poseidon_config: &PoseidonConfig<Fr>, // Needed for dummy circuit
+) -> Result<ProvingKey<Bn254>> {
+    if Path::new(pk_path).exists() && Path::new(vk_path).exists() {
+        // Check both
+        println!("   Loading existing proving key from {}", pk_path);
+        let pk_bytes = fs::read(pk_path)?;
+        // Optional: Load VK too if needed later, though not strictly required for proving
+        // let vk_bytes = fs::read(vk_path)?;
+        // VerifyingKey::<Bn254>::deserialize_compressed(&*vk_bytes)?;
+        Ok(ProvingKey::<Bn254>::deserialize_compressed(&*pk_bytes)?)
+    } else {
+        println!(
+            "   Proving/Verifying key not found. Performing one-time setup for L2BlockCircuit..."
+        );
+        // Setup requires the exact Poseidon config the circuit uses
+        let config = poseidon_config.clone();
+        let dummy_circuit = L2BlockCircuit {
+            prev_root: Some([0; 32]),
+            new_root: Some([0; 32]),
+            transactions: Some(vec![]),
+            initial_accounts: Some(BTreeMap::new()),
+            batch_id: Some(0),
+            poseidon_config: config, // Pass config
+        };
+        let mut rng = StdRng::seed_from_u64(0);
+        let start_setup = std::time::Instant::now();
+        let (pk, vk) = Groth16::<Bn254>::circuit_specific_setup(dummy_circuit, &mut rng)?;
+        println!("      Setup complete in {:?}", start_setup.elapsed());
+        // Save keys
+        let mut pk_bytes = Vec::new();
+        pk.serialize_compressed(&mut pk_bytes)?;
+        fs::write(pk_path, &pk_bytes)?;
+        println!("      Saved proving key to {}", pk_path);
+        let mut vk_bytes = Vec::new();
+        vk.serialize_compressed(&mut vk_bytes)?;
+        fs::write(vk_path, &vk_bytes)?;
+        println!("      Saved verifying key to {}", vk_path);
+        Ok(pk)
+    }
+}
 
-
- // --- CONVERSION HELPERS ---
+// --- CONVERSION HELPERS ---
 
 /// Converts an Arkworks G1Affine point to the 64-byte LE format expected by Solana.
 /// Handles the negation of the first G1 point (proof.a) required by Groth16 pairings.
@@ -430,7 +515,8 @@ fn g1_affine_to_bytes_le(p: G1Affine, negate: bool) -> Result<[u8; 64]> {
         p_copy = -p; // Negate the point if required (for proof.a)
     }
     let mut bytes = [0u8; 64];
-    if !p_copy.is_zero() { // Handle identity point explicitly
+    if !p_copy.is_zero() {
+        // Handle identity point explicitly
         let x_bytes = p_copy.x.into_bigint().to_bytes_le();
         let y_bytes = p_copy.y.into_bigint().to_bytes_le();
         bytes[..x_bytes.len()].copy_from_slice(&x_bytes);
@@ -498,9 +584,14 @@ async fn settle_on_l1(
     println!("         pi_a[0..8]: {}", hex::encode(&pi_a_bytes[..8]));
     println!("         pi_b[0..8]: {}", hex::encode(&pi_b_bytes[..8]));
     println!("         pi_c[0..8]: {}", hex::encode(&pi_c_bytes[..8]));
-    println!("         PublicInput0 (PrevRoot): {}", hex::encode(public_input_0_bytes));
-    println!("         PublicInput1 (NewRoot): {}", hex::encode(public_input_1_bytes));
-
+    println!(
+        "         PublicInput0 (PrevRoot): {}",
+        hex::encode(public_input_0_bytes)
+    );
+    println!(
+        "         PublicInput1 (NewRoot): {}",
+        hex::encode(public_input_1_bytes)
+    );
 
     // --- 3. Construct Instruction Data ---
     // This MUST match the deserialization logic in your on-chain verifier
@@ -514,11 +605,14 @@ async fn settle_on_l1(
     instruction_data.extend_from_slice(&public_input_0_bytes);
     instruction_data.extend_from_slice(&public_input_1_bytes);
 
-
     // --- 4. Derive PDAs & Build Account Metas ---
     // (Adjust if your verifier uses different accounts/seeds)
     let (proof_account_pda, _) = SolanaPubkey::find_program_address(
-        &[b"groth16_proof", payer.pubkey().as_ref(), batch_id.to_string().as_bytes()],
+        &[
+            b"groth16_proof",
+            payer.pubkey().as_ref(),
+            batch_id.to_string().as_bytes(),
+        ],
         &verifier_program_id,
     );
     println!("      Target Proof PDA: {}", proof_account_pda);
@@ -555,5 +649,3 @@ async fn settle_on_l1(
     println!("      ✅ Settlement transaction confirmed!");
     Ok(signature)
 }
-
-

@@ -1,6 +1,6 @@
 use chacha20poly1305::{
-    aead::{rand_core::OsRng, Aead, KeyInit},
     ChaCha20Poly1305, Key, Nonce,
+    aead::{Aead, KeyInit, rand_core::OsRng},
 };
 use hkdf::Hkdf;
 use sha2::{Digest, Sha256};

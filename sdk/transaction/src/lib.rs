@@ -1,14 +1,11 @@
-use serde::{Serialize, Deserialize};
-
+use serde::{Deserialize, Serialize};
+use wincode_derive::{SchemaRead, SchemaWrite};
+use zelana_account::AccountId;
 use zelana_pubkey::Pubkey;
 use zelana_signature::Signature;
-use zelana_account::{AccountId};
-
-use wincode_derive::{SchemaWrite, SchemaRead};
-
 
 pub mod bridge;
-pub use bridge::{DepositEvent, WithdrawRequest, DepositParams};
+pub use bridge::{DepositEvent, DepositParams, WithdrawRequest};
 
 /// The enum for all inputs to the L2 State Machine.
 #[derive(Debug, Clone, Serialize, Deserialize, SchemaRead, SchemaWrite)]
@@ -33,7 +30,7 @@ pub struct Transaction {
 }
 
 /// The payload a user signs.
-#[derive(Debug, Clone, Serialize, Deserialize,  PartialEq, SchemaRead, SchemaWrite)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, SchemaRead, SchemaWrite)]
 pub struct TransactionData {
     pub from: AccountId,
     pub to: AccountId,
@@ -44,7 +41,7 @@ pub struct TransactionData {
 }
 
 /// The authenticated wrapper around TransactionData.
-#[derive(Debug,Clone, Serialize, Deserialize, SchemaRead, SchemaWrite)]
+#[derive(Debug, Clone, Serialize, Deserialize, SchemaRead, SchemaWrite)]
 pub struct SignedTransaction {
     pub data: TransactionData,
     /// The Ed25519 signature of the serialized `data`.

@@ -11,9 +11,9 @@ use std::env;
 use std::str::FromStr;
 use std::time::Duration;
 use tokio::time::sleep;
-use zephyr::client::ZelanaClient;
 use zelana_account::AccountId;
-use zelana_transaction::{SignedTransaction, TransactionData, DepositParams};
+use zelana_transaction::{DepositParams, SignedTransaction, TransactionData};
+use zephyr::client::ZelanaClient;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {

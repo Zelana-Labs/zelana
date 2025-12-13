@@ -1,4 +1,4 @@
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 
 pub const KIND_CLIENT_HELLO: u8 = 1;
 pub const KIND_SERVER_HELLO: u8 = 2;

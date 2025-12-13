@@ -2,8 +2,8 @@ cargo-features = ["edition2024"]
 
 [package]
 name = "bridge-z"
-version = {workspace = true}
-edition = {workspace = true}
+version = { workspace = true }
+edition = { workspace = true }
 
 [lib]
 crate-type = ["lib", "cdylib"]

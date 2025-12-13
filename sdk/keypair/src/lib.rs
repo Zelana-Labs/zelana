@@ -1,9 +1,9 @@
 use chacha20poly1305::aead::OsRng;
 use ed25519_dalek::{Signer, SigningKey};
 use x25519_dalek::{PublicKey as X25519PublicKey, StaticSecret};
-use zelana_account::{AccountId};
+use zelana_account::AccountId;
+use zelana_pubkey::PublicKeys;
 use zelana_transaction::{SignedTransaction, TransactionData};
-use zelana_pubkey::{PublicKeys};
 
 /// A user's wallet containing private keys.
 /// NEVER expose this struct's internals.

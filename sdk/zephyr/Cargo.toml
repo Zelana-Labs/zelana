@@ -1,20 +1,20 @@
 [package]
 name = "zephyr"
-description = "Zelana Zephyr type"
+description = "Zelana Zephyr types"
 version = { workspace = true }
 edition = { workspace = true }
 
 [dependencies]
-hkdf = "0.12"
-sha2 = { workspace = true }
 anyhow = { workspace = true }
+chacha20poly1305 = { workspace = true }
+hkdf = "0.12"
+rand_core = { workspace = true }
+sha2 = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true, optional = true }
-rand_core = { workspace = true }
-chacha20poly1305 = { workspace = true }
+wincode = { workspace = true }
 x25519-dalek = { workspace = true, features = ["static_secrets"] }
-zelana-transaction = {workspace = true}
-wincode = {workspace = true}
+zelana-transaction = { workspace = true }
 
 [features]
 default = ["async"]

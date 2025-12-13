@@ -1,6 +1,4 @@
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
-pub struct Signature(
-    #[serde(with = "serde_bytes")] pub [u8;32]
-);
+pub struct Signature(#[serde(with = "serde_bytes")] pub [u8; 32]);

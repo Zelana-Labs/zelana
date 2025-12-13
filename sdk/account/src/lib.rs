@@ -1,10 +1,9 @@
 use serde::{Deserialize, Serialize};
-use wincode_derive::{SchemaWrite, SchemaRead};
-use wincode::Deserialize as WincodeDeserialize;
 use std::fmt;
+use wincode_derive::{SchemaRead, SchemaWrite};
 
 /// The state of an account.
-#[derive(Clone, Debug,Default, PartialEq, Serialize, Deserialize, SchemaRead, SchemaWrite)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, SchemaRead, SchemaWrite)]
 pub struct AccountState {
     pub balance: u64,
     pub nonce: u64,
@@ -12,7 +11,9 @@ pub struct AccountState {
 
 /// The canonical identifier for a user on L2 (32 bytes).
 /// Derived from H(SignerPK || PrivacyPK)
-#[derive(Clone, Copy,Serialize, Deserialize, PartialEq, Eq, Hash, Default, SchemaWrite, SchemaRead)]
+#[derive(
+    Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash, Default, SchemaWrite, SchemaRead,
+)]
 pub struct AccountId(pub [u8; 32]);
 
 impl AccountId {

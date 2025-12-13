@@ -1,6 +1,6 @@
-use serde::{Serialize, Deserialize};
-use byteorder::{BigEndian,ByteOrder,ReadBytesExt,WriteBytesExt};
-use std::io::{Cursor,Read,Write};
+use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
+use serde::Serialize;
+use std::io::{Cursor, Read, Write};
 
 // Block header
 pub const HEADER_MAGIC: [u8; 4] = *b"ZLNA";
@@ -21,9 +21,9 @@ pub struct BlockHeader {
     pub open_at: u64,
     pub flags: u32,
 }
-impl BlockHeader{
-    pub fn to_bytes(&self)->Result<[u8;HEADER_SIZE],std::io::Error>{
-        let mut bytes = [0u8;HEADER_SIZE];
+impl BlockHeader {
+    pub fn to_bytes(&self) -> Result<[u8; HEADER_SIZE], std::io::Error> {
+        let mut bytes = [0u8; HEADER_SIZE];
         let mut cursor = Cursor::new(&mut bytes[..]);
         cursor.write_all(&self.magic)?;
         cursor.write_u16::<BigEndian>(self.hdr_version)?;
@@ -38,11 +38,11 @@ impl BlockHeader{
         Ok(bytes)
     }
 
-    pub fn from_bytes(bytes:&[u8;HEADER_SIZE])->Result<Self,std::io::Error>{
+    pub fn from_bytes(bytes: &[u8; HEADER_SIZE]) -> Result<Self, std::io::Error> {
         let mut cursor = Cursor::new(&bytes[..]);
-        let mut magic = [0u8;4];
+        let mut magic = [0u8; 4];
         cursor.read_exact(&mut magic)?;
-        
+
         let hdr_version = cursor.read_u16::<BigEndian>()?;
         cursor.read_u16::<BigEndian>()?;
 
@@ -54,7 +54,16 @@ impl BlockHeader{
         let tx_count = cursor.read_u32::<BigEndian>()?;
         let open_at = cursor.read_u64::<BigEndian>()?;
         let flags = cursor.read_u32::<BigEndian>()?;
-        Ok(Self { magic, hdr_version, batch_id, prev_root, new_root, tx_count, open_at, flags })
+        Ok(Self {
+            magic,
+            hdr_version,
+            batch_id,
+            prev_root,
+            new_root,
+            tx_count,
+            open_at,
+            flags,
+        })
     }
     pub fn genesis() -> Self {
         Self {

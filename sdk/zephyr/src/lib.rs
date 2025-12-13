@@ -1,7 +1,6 @@
+pub mod client;
 pub mod keys;
 pub mod packet;
-pub mod client;
-
 pub use keys::{EphemeralKeyPair, SessionKeys};
 
 #[cfg(test)]

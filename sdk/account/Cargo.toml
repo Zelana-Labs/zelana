@@ -1,12 +1,12 @@
 [package]
 name = "zelana-account"
-description = "Zelana Account type"
-version = {workspace = true}
-edition = {workspace = true}
+description = "Zelana account types"
+version = { workspace = true }
+edition = { workspace = true }
 
 [dependencies]
+hex = { workspace = true }
 serde = { workspace = true }
-hex = {workspace = true}
+thiserror = { workspace = true }
 wincode = { workspace = true }
-wincode-derive = {workspace = true}
-thiserror ={ workspace = true}
+wincode-derive = { workspace = true }

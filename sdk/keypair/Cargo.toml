@@ -6,9 +6,9 @@ edition = { workspace = true }
 
 [dependencies]
 chacha20poly1305 = { workspace = true }
-ed25519-dalek = {workspace = true}
+ed25519-dalek = { workspace = true }
+wincode = { workspace = true }
 x25519-dalek = { workspace = true }
 zelana-transaction = { workspace = true }
-zelana-account = {workspace = true}
-zelana-pubkey = {workspace = true}
-wincode ={ workspace = true}
+zelana-account = { workspace = true }
+zelana-pubkey = { workspace = true }
