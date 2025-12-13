@@ -1,38 +1,82 @@
 # Zelana
 
-## Run sequencer
+## Prerequisites
+
+Before running the sequencer, you must start a **local Solana test validator** and deploy the **bridge program**.
+The sequencer listens to bridge events over a **WebSocket connection**, which requires the validator to be running.
+
+### Start the test validator
+
+```bash
+surfpool start
 ```
+
+### Set Solana CLI to localnet
+
+```bash
+solana config set --url http://127.0.0.1:8899
+```
+
+### Deploy the bridge program
+
+```bash
+solana program deploy ../../onchain-programs/bridge/target/deploy/bridge.so
+```
+
+After deployment:
+
+1. Copy the deployed **program ID**
+2. Update it in `lib.rs`
+3. Re-deploy the program so the change is applied
+
+---
+
+## Run the Sequencer
+
+```bash
 RUST_LOG=info cargo run -p core --release
 ```
 
-Run a throughput bench:
-```
+---
+
+## Examples
+
+### Throughput benchmark
+
+```bash
 cargo run -p core --example bench_throughput --release
 ```
 
-Run a bridge test:
-```
+### Bridge test
+
+```bash
 cargo run -p core --example bridge --release
 ```
 
-Run the `full_lifecycle` example:
-```
+### Full lifecycle example
+
+```bash
 cargo run -p core --example full_lifecycle --release
 ```
 
-Run the L2 transaction example:
-```
+### L2 transaction example
+
+```bash
 cargo run -p core --example transaction --release
 ```
 
+---
 
+## Debugging
 
-Run a service:
-```
+### Run a service
+
+```bash
 cargo run -p prover
 ```
 
-Build a specific repo:
-```
+### Build a specific crate
+
+```bash
 cargo build -p core
 ```
