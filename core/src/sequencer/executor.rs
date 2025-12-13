@@ -1,10 +1,12 @@
-use anyhow::Result;
+use anyhow::{Result,bail};
 use log::{error, info};
-use zelana_core::SignedTransaction;
-use zelana_execution::BatchExecutor;
-use zelana_sdk::L2Transaction;
+use wincode_derive::{SchemaRead, SchemaWrite};
+use std::fmt;
+use zelana_transaction::{SignedTransaction, TransactionData, TransactionType, DepositEvent, WithdrawRequest};
+use zelana_account::{AccountId, AccountState};
 
-use crate::db::RocksDbStore;
+use crate::storage::BatchExecutor;
+use super::db::RocksDbStore;
 
 pub struct TransactionExecutor {
    pub db:RocksDbStore
@@ -26,9 +28,9 @@ impl TransactionExecutor {
 
         //wrap in the execution engin
         let mut executor = BatchExecutor::new(&mut store);
-
-        //wrap as l2transaction
-        let l2_tx = L2Transaction::Transfer(tx.clone());
+        
+        //wrap as TransactionType
+        let l2_tx = TransactionType::Transfer(tx.clone());
 
         match executor.execute(&l2_tx){
             Ok(_) => {

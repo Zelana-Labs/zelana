@@ -1,21 +1,16 @@
-mod executor;
-mod session;
-mod db;
-mod ingest;
-
-use ed25519_dalek::SigningKey;
-use executor::TransactionExecutor;
+use anyhow::{Result, bail};
+use core::sequencer::executor::TransactionExecutor;
 use log::{debug, error, info, warn};
-use session::SessionManager;
-use zelana_execution::AccountState;
+use core::sequencer::session::{SessionKeys, SessionManager};
+use core::sequencer::ingest;
 use std::{env, sync::Arc};
 use tokio::net::UdpSocket;
-use x25519_dalek::{PublicKey, StaticSecret};
-use zelana_core::{IdentityKeys, L2Transaction, SignedTransaction};
-use zelana_net::{
-    protocol::Packet, EphemeralKeyPair, SessionKeys, KIND_APP_DATA, KIND_CLIENT_HELLO,
-    KIND_SERVER_HELLO,
+use x25519_dalek::{PublicKey};
+use zelana_transaction::{
+    SignedTransaction, TransactionType,
 };
+use zephyr::EphemeralKeyPair;
+use zephyr::packet::{KIND_APP_DATA, KIND_CLIENT_HELLO, KIND_SERVER_HELLO, Packet};
 
 const MAX_DATAGRAM_SIZE: usize = 1500; // Standard MTU safe limit
 
@@ -33,11 +28,10 @@ async fn main() -> anyhow::Result<()> {
     let executor = TransactionExecutor::new("./data/sequencer_db")?;
 
     let db_handle = executor.db.clone();
-    tokio::spawn(async move{
-        let bridge_id = env::var("BRIDGE_PROGRAM_ID")
-            .unwrap_or_else(|_| "GuiZ...".to_string());
-        let wss_url = env::var("SOLANA_WSS_URL")
-            .unwrap_or_else(|_| "ws://127.0.0.1:8900".to_string());
+    tokio::spawn(async move {
+        let bridge_id = env::var("BRIDGE_PROGRAM_ID").unwrap_or_else(|_| "GuiZ...".to_string());
+        let wss_url =
+            env::var("SOLANA_WSS_URL").unwrap_or_else(|_| "ws://127.0.0.1:8900".to_string());
 
         ingest::start_indexer(db_handle, wss_url, bridge_id).await;
     });
@@ -130,10 +124,10 @@ async fn handle_transaction(
     executor: &TransactionExecutor,
 ) -> anyhow::Result<()> {
     //Deserialize
-    let tx: L2Transaction = wincode::deserialize(plaintext)?;
+    let tx: TransactionType = wincode::deserialize(plaintext)?;
 
     match tx {
-        L2Transaction::Transfer(signed_tx) => {
+        TransactionType::Transfer(signed_tx) => {
             //Validate Signature (Anti-Spoofing)
             // Even though ZK proves this later, we MUST check it now to protect the Sequencer.
             verify_signature(&signed_tx)?;

@@ -1,162 +1,134 @@
-mod executor;
-mod session;
-mod db;
-mod ingest;
-
-use ed25519_dalek::SigningKey;
-use executor::TransactionExecutor;
-use log::{debug, error, info, warn};
-use session::SessionManager;
-use zelana_execution::AccountState;
-use std::{env, sync::Arc};
-use tokio::net::UdpSocket;
-use x25519_dalek::{PublicKey, StaticSecret};
-use zelana_core::{IdentityKeys, L2Transaction, SignedTransaction};
-use zelana_net::{
-    protocol::Packet, EphemeralKeyPair, SessionKeys, KIND_APP_DATA, KIND_CLIENT_HELLO,
-    KIND_SERVER_HELLO,
+use dashmap::DashMap;
+use std::net::SocketAddr;
+use chacha20poly1305::{
+    aead::{rand_core::OsRng, Aead, KeyInit},
+    ChaCha20Poly1305, Key, Nonce,
 };
+use wincode_derive::{SchemaRead, SchemaWrite};
+use std::fmt;
+use sha2::{Digest, Sha256};
+use hkdf::Hkdf;
+use zelana_account::{AccountId};
 
-const MAX_DATAGRAM_SIZE: usize = 1500; // Standard MTU safe limit
+/// The established session state after a successful handshake.
+pub struct SessionKeys {
+    aead: ChaCha20Poly1305,
+    base_iv: [u8; 12],
+    /// We track the sequence number to prevent replay attacks
+    tx_counter: u64,
+    rx_counter: u64,
+}
 
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
-    env_logger::init();
-    info!("Sequencer  Starting...");
+impl SessionKeys {
+    /// Derives session keys from a Diffie-Hellman shared secret.
+    /// salt = H(client_pk || server_pk)
+    pub fn derive(shared_secret: [u8; 32], client_pk: &[u8; 32], server_pk: &[u8; 32]) -> Self {
+        // 1. Compute Salt
+        let mut hasher = Sha256::new();
+        hasher.update(client_pk);
+        hasher.update(server_pk);
+        let salt = hasher.finalize();
 
-    //Bind UDP Socket
-    let socket = Arc::new(UdpSocket::bind("0.0.0.0:9000").await?);
-    info!("Listening on UDP 0.0.0.0:9000");
+        // 2. HKDF Expand
+        let hk = Hkdf::<Sha256>::new(Some(&salt), &shared_secret);
+        let mut okm = [0u8; 44]; // 32 bytes Key + 12 bytes IV
+        hk.expand(b"zelana-v2-session", &mut okm)
+            .expect("HKDF expansion failed");
 
-    //Initialize State
-    let sessions = Arc::new(SessionManager::new());
-    let executor = TransactionExecutor::new("./data/sequencer_db")?;
+        let key = Key::from_slice(&okm[0..32]);
+        let iv: [u8; 12] = okm[32..44].try_into().unwrap();
 
-    let db_handle = executor.db.clone();
-    tokio::spawn(async move{
-        let bridge_id = env::var("BRIDGE_PROGRAM_ID")
-            .unwrap_or_else(|_| "GuiZ...".to_string());
-        let wss_url = env::var("SOLANA_WSS_URL")
-            .unwrap_or_else(|_| "ws://127.0.0.1:8900".to_string());
-
-        ingest::start_indexer(db_handle, wss_url, bridge_id).await;
-    });
-
-    let mut buf = [0u8; MAX_DATAGRAM_SIZE];
-
-    loop {
-        //Receive Packet
-        let (len, peer) = match socket.recv_from(&mut buf).await {
-            Ok(v) => v,
-            Err(e) => {
-                error!("UDP Receive Error: {}", e);
-                continue;
-            }
-        };
-
-        let packet_data = &buf[..len];
-
-        //Zero-Copy Parse
-        match Packet::parse(packet_data) {
-            Ok(Packet::ClientHello { public_key }) => {
-                debug!("ClientHello from {}", peer);
-
-                //Generate Server Ephemeral Keys
-                let server_keys = EphemeralKeyPair::generate();
-                let server_pub_bytes = *server_keys.pk.as_bytes();
-
-                //Convert client public key bytes → x25519_dalek::PublicKey
-                // public_key: & [u8; 32]
-                let client_public = PublicKey::from(*public_key);
-
-                //Derive Session (EphemeralSecret × PublicKey → SharedSecret)
-                let shared = server_keys.sk.diffie_hellman(&client_public);
-                let shared_secret = shared.to_bytes(); // [u8; 32]
-
-                let session = SessionKeys::derive(shared_secret, public_key, &server_pub_bytes);
-
-                //Store Session
-                sessions.insert(peer, session);
-
-                //Send ServerHello
-                let mut response = Vec::with_capacity(33);
-                response.push(KIND_SERVER_HELLO);
-                response.extend_from_slice(&server_pub_bytes);
-
-                if let Err(e) = socket.send_to(&response, peer).await {
-                    warn!("Failed to send ServerHello to {}: {}", peer, e);
-                }
-            }
-
-            Ok(Packet::AppData { nonce, ciphertext }) => {
-                //Lookup Session
-                let decrypted_opt =
-                    sessions.get_mut(&peer, |session| session.keys.decrypt(nonce, ciphertext));
-
-                match decrypted_opt {
-                    Some(Ok(plaintext)) => {
-                        //Handle Transaction
-                        match handle_transaction(&plaintext, &executor).await {
-                            Ok(_) => debug!("Tx Executed from {}", peer),
-                            Err(e) => warn!("Tx Failed from {}: {}", peer, e),
-                        }
-                    }
-                    Some(Err(e)) => {
-                        warn!("Decryption failed for {}: {}", peer, e);
-                        // Potential Replay Attack or Bad Key - Drop Session
-                    }
-                    None => {
-                        debug!("Unknown Peer {}, ignoring AppData", peer);
-                        // Client sent data but we have no session (Server restarted?)
-                        // Ideally send a "Reset" packet here so client reconnects
-                    }
-                }
-            }
-
-            Ok(Packet::ServerHello { .. }) => {
-                // Clients send ClientHello, not ServerHello. Ignore.
-            }
-
-            Err(e) => {
-                warn!("Malformed packet from {}: {}", peer, e);
-            }
+        Self {
+            aead: ChaCha20Poly1305::new(key),
+            base_iv: iv,
+            tx_counter: 0,
+            rx_counter: 0,
         }
+    }
+
+    /// Encrypts a payload and increments the TX counter.
+    /// Returns: [Nonce (12B) || Ciphertext]
+    pub fn encrypt(&mut self, plaintext: &[u8]) -> anyhow::Result<Vec<u8>> {
+        self.tx_counter += 1;
+        let nonce = compute_nonce(&self.base_iv, self.tx_counter);
+
+        let ciphertext = self
+            .aead
+            .encrypt(&nonce, plaintext)
+            .map_err(|_| anyhow::anyhow!("Encryption failure"))?;
+
+        // Prepend nonce for the receiver
+        let mut output = Vec::with_capacity(12 + ciphertext.len());
+        output.extend_from_slice(nonce.as_slice());
+        output.extend_from_slice(&ciphertext);
+
+        Ok(output)
+    }
+
+    /// Decrypts a payload given the nonce provided in the packet.
+    /// Note:  verify the nonce > rx_counter.
+    pub fn decrypt(&mut self, nonce_bytes: &[u8], ciphertext: &[u8]) -> anyhow::Result<Vec<u8>> {
+        if nonce_bytes.len() != 12 {
+            return Err(anyhow::anyhow!("Invalid nonce length"));
+        }
+        let nonce = Nonce::from_slice(nonce_bytes);
+
+        let plaintext = self
+            .aead
+            .decrypt(nonce, ciphertext)
+            .map_err(|_| anyhow::anyhow!("Decryption failure (Bad Key or Mac)"))?;
+
+        Ok(plaintext)
     }
 }
 
-/// Decodes and routes the transaction to the executor
-async fn handle_transaction(
-    plaintext: &[u8],
-    executor: &TransactionExecutor,
-) -> anyhow::Result<()> {
-    //Deserialize
-    let tx: L2Transaction = wincode::deserialize(plaintext)?;
-
-    match tx {
-        L2Transaction::Transfer(signed_tx) => {
-            //Validate Signature (Anti-Spoofing)
-            // Even though ZK proves this later, we MUST check it now to protect the Sequencer.
-            verify_signature(&signed_tx)?;
-
-            //Execute
-            executor.process(signed_tx).await?;
-        }
-        _ => {
-            // Handle Deposits/Withdrawals
-        }
+/// XOR-based counter nonce generation (WireGuard style).
+fn compute_nonce(base_iv: &[u8; 12], counter: u64) -> Nonce {
+    let mut n = *base_iv;
+    let c = counter.to_be_bytes();
+    // XOR the counter into the last 8 bytes of the IV
+    for i in 0..8 {
+        n[11 - i] ^= c[7 - i];
     }
-    Ok(())
+    *Nonce::from_slice(&n)
 }
 
-fn verify_signature(tx: &SignedTransaction) -> anyhow::Result<()> {
-    use ed25519_dalek::{Signature, Verifier, VerifyingKey};
+/// Manages active secure sessions for connected clients.
+pub struct SessionManager {
+    /// Maps IP:Port -> Encryption Keys
+    sessions: DashMap<SocketAddr, ActiveSession>,
+}
 
-    let vk = VerifyingKey::from_bytes(&tx.signer_pubkey)?;
-    let sig = Signature::from_slice(&tx.signature)?;
+pub struct ActiveSession {
+    pub keys: SessionKeys,
+    pub account_id: Option<AccountId>, // Known after first valid signature
+}
 
-    // Re-serialize data to verify (Must match SDK serialization exactly)
-    let msg = wincode::serialize(&tx.data)?;
+impl SessionManager {
+    pub fn new() -> Self {
+        Self {
+            sessions: DashMap::new(),
+        }
+    }
 
-    vk.verify(&msg, &sig)?;
-    Ok(())
+    pub fn insert(&self, addr: SocketAddr, keys: SessionKeys) {
+        self.sessions.insert(
+            addr,
+            ActiveSession {
+                keys,
+                account_id: None,
+            },
+        );
+    }
+
+    pub fn get_mut<F, R>(&self, addr: &SocketAddr, f: F) -> Option<R>
+    where
+        F: FnOnce(&mut ActiveSession) -> R,
+    {
+        self.sessions.get_mut(addr).map(|mut entry| f(&mut entry))
+    }
+
+    pub fn remove(&self, addr: &SocketAddr) {
+        self.sessions.remove(addr);
+    }
 }
