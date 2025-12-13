@@ -6,3 +6,5 @@ edition = {workspace = true}
 
 [dependencies]
 serde = { workspace = true}
+zelana-account = {workspace = true}
+sha2 = {workspace = true}

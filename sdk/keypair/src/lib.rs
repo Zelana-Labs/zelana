@@ -1,11 +1,9 @@
 use chacha20poly1305::aead::OsRng;
 use ed25519_dalek::{Signer, SigningKey};
 use x25519_dalek::{PublicKey as X25519PublicKey, StaticSecret};
-use zelana_core::{
-    identity::{AccountId, IdentityKeys},
-    transaction::{SignedTransaction, TransactionData},
-};
-use zelana_transaction::{SignedTransaction, TransactionData}
+use zelana_account::{AccountId};
+use zelana_transaction::{SignedTransaction, TransactionData};
+use zelana_pubkey::{PublicKeys};
 
 /// A user's wallet containing private keys.
 /// NEVER expose this struct's internals.
@@ -44,8 +42,8 @@ impl Keypair {
     }
 
     /// Returns the public key set (safe to share).
-    pub fn public_keys(&self) -> IdentityKeys {
-        IdentityKeys {
+    pub fn public_keys(&self) -> PublicKeys {
+        PublicKeys {
             signer_pk: self.signing_key.verifying_key().to_bytes(),
             privacy_pk: X25519PublicKey::from(&self.privacy_key).to_bytes(),
         }

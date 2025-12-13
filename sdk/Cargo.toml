@@ -1,8 +1,0 @@
-[package]
-name = "zelana-sdk"
-description = "Zelana SDK"
-version = {workspace = true}
-edition = {workspace = true}
-
-[dependencies]
-serde = { workspace = true}

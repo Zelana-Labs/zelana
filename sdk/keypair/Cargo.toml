@@ -1,6 +1,14 @@
 [package]
-name = "keypair"
-version = "0.1.0"
-edition = "2024"
+name = "zelana-keypair"
+description = "Zelana Keypair type"
+version = { workspace = true }
+edition = { workspace = true }
 
 [dependencies]
+chacha20poly1305 = { workspace = true }
+ed25519-dalek = {workspace = true}
+x25519-dalek = { workspace = true }
+zelana-transaction = { workspace = true }
+zelana-account = {workspace = true}
+zelana-pubkey = {workspace = true}
+wincode ={ workspace = true}

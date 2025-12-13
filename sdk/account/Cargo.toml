@@ -6,3 +6,7 @@ edition = {workspace = true}
 
 [dependencies]
 serde = { workspace = true }
+hex = {workspace = true}
+wincode = { workspace = true }
+wincode-derive = {workspace = true}
+thiserror ={ workspace = true}
