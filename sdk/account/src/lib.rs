@@ -1,9 +1,10 @@
 use serde::{Deserialize, Serialize};
 use wincode_derive::{SchemaWrite, SchemaRead};
+use wincode::Deserialize as WincodeDeserialize;
 use std::fmt;
 
 /// The state of an account.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug,Default, PartialEq, Serialize, Deserialize, SchemaRead, SchemaWrite)]
 pub struct AccountState {
     pub balance: u64,
     pub nonce: u64,
