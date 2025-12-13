@@ -80,3 +80,6 @@ cargo run -p prover
 ```bash
 cargo build -p core
 ```
+
+## License
+Licensed under the Apache License, Version 2.0. 

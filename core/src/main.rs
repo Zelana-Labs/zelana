@@ -1,3 +1,6 @@
+// Copyright 2025 Zelana Labs
+// Licensed under the Apache License, Version 2.0
+
 use core::sequencer::executor::TransactionExecutor;
 use core::sequencer::ingest;
 use core::sequencer::session::{SessionKeys, SessionManager};
