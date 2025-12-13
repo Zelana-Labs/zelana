@@ -8,7 +8,7 @@ use wincode_derive::{SchemaWrite, SchemaRead};
 
 
 pub mod bridge;
-pub use bridge::{DepositEvent, WithdrawRequest};
+pub use bridge::{DepositEvent, WithdrawRequest, DepositParams};
 
 /// The enum for all inputs to the L2 State Machine.
 #[derive(Debug, Clone, Serialize, Deserialize, SchemaRead, SchemaWrite)]

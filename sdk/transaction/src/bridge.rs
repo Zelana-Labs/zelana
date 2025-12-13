@@ -10,6 +10,13 @@ pub struct DepositEvent {
     pub l1_seq: u64,
 }
 
+// Bridge Params
+#[derive(SchemaWrite)]
+pub struct DepositParams {
+    pub amount: u64,
+    pub nonce: u64,
+}
+
 #[derive(Debug,Serialize, Deserialize,  Clone, SchemaRead, SchemaWrite)]
 pub struct WithdrawRequest {
     pub from: AccountId,
