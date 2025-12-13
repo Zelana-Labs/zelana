@@ -37,7 +37,7 @@ use solana_system_interface::program::ID;
 use zelana_transaction::{Transaction, TransactionType};
 use zelana_signature::Signature;
 use zelana_pubkey::Pubkey;
-use zelana_account::Account;
+use zelana_account::AccountId;
 use zelana_block::{BlockHeader};
 
 // Get this Pubkey from where you deployed your onchain_verifier program
