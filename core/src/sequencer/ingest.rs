@@ -78,17 +78,17 @@ fn parse_deposit_log(payload: &str) -> Option<DepositEvent> {
 }
 
 fn process_deposit(db: &RocksDbStore, event: DepositEvent) {
-    // 1. Load Account (or create new)
-    let mut account = db.get_account(&event.to).unwrap_or_default();
+    // 1. Load AccountState from "to" address (or create new)
+    let mut account_state = db.get_account(&event.to).unwrap_or_default();
 
     // 2. Credit Balance
-    account.balance = account.balance.saturating_add(event.amount);
+    account_state.balance = account_state.balance.saturating_add(event.amount);
 
     // 3. Save
     // Note: In production, store the 'l1_seq' to prevent re-processing the same deposit!
     // For MVP, direct addition is fine.
     let mut db_mut = db.clone(); // Clone Arc for mutability trait
-    if let Err(e) = db_mut.set_account(event.to, account) {
+    if let Err(e) = db_mut.set_account(event.to, account_state) {
         error!("Failed to persist deposit: {}", e);
     } else {
         info!("DEPOSIT: +{} for {:?}", event.amount, event.to);
