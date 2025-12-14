@@ -48,11 +48,11 @@ impl ZkMemStore {
 }
 
 impl StateStore for ZkMemStore {
-    fn get_account(&self, id: &AccountId) -> Result<AccountState> {
+    fn get_account_state(&self, id: &AccountId) -> Result<AccountState> {
         Ok(self.accounts.get(id).cloned().unwrap_or_default())
     }
 
-    fn set_account(&mut self, id: AccountId, state: AccountState) -> Result<()> {
+    fn set_account_state(&mut self, id: AccountId, state: AccountState) -> Result<()> {
         self.accounts.insert(id, state);
         Ok(())
     }

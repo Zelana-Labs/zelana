@@ -28,7 +28,7 @@ impl<'a, S: StateStore> BatchExecutor<'a, S> {
         let nonce = tx.data.nonce;
 
         //Load Sender
-        let mut sender = self.store.get_account(&from_id)?;
+        let mut sender = self.store.get_account_state(&from_id)?;
 
         //Checks
         if sender.nonce != nonce {
@@ -45,15 +45,15 @@ impl<'a, S: StateStore> BatchExecutor<'a, S> {
         //Update Sender
         sender.balance -= amount;
         sender.nonce += 1;
-        self.store.set_account(from_id, sender)?;
+        self.store.set_account_state(from_id, sender)?;
 
         //Update Recipient
-        let mut recipient = self.store.get_account(&to_id)?;
+        let mut recipient = self.store.get_account_state(&to_id)?;
         recipient.balance = recipient
             .balance
             .checked_add(amount)
             .ok_or_else(|| anyhow::anyhow!("Overflow in recipient balance"))?;
-        self.store.set_account(to_id, recipient)?;
+        self.store.set_account_state(to_id, recipient)?;
 
         Ok(())
     }
@@ -61,19 +61,19 @@ impl<'a, S: StateStore> BatchExecutor<'a, S> {
     fn execute_deposit(&mut self, deposit: &DepositEvent) -> Result<()> {
         // Deposits are authoritative "Mint" events from L1.
         // We do not check nonces or signatures (L1 Bridge did that).
-        let mut account = self.store.get_account(&deposit.to)?;
+        let mut account = self.store.get_account_state(&deposit.to)?;
 
         account.balance = account
             .balance
             .checked_add(deposit.amount)
             .ok_or_else(|| anyhow::anyhow!("Overflow in deposit"))?;
 
-        self.store.set_account(deposit.to, account)?;
+        self.store.set_account_state(deposit.to, account)?;
         Ok(())
     }
 
     fn execute_withdraw(&mut self, req: &WithdrawRequest) -> Result<()> {
-        let mut sender = self.store.get_account(&req.from)?;
+        let mut sender = self.store.get_account_state(&req.from)?;
 
         if sender.nonce != req.nonce {
             bail!("Nonce mismatch on withdraw");
@@ -86,7 +86,7 @@ impl<'a, S: StateStore> BatchExecutor<'a, S> {
         sender.balance -= req.amount;
         sender.nonce += 1;
 
-        self.store.set_account(req.from, sender)?;
+        self.store.set_account_state(req.from, sender)?;
         Ok(())
     }
 }

@@ -5,8 +5,8 @@ use zelana_account::AccountState;
 /// decoupling logic from the db
 pub trait StateStore {
     /// Retrieve an account. Returns Default if not found.
-    fn get_account(&self, id: &AccountId) -> Result<AccountState>;
+    fn get_account_state(&self, id: &AccountId) -> Result<AccountState>;
 
     /// Update an account's state.
-    fn set_account(&mut self, id: AccountId, state: AccountState) -> Result<()>;
+    fn set_account_state(&mut self, id: AccountId, state: AccountState) -> Result<()>;
 }
