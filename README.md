@@ -1,4 +1,8 @@
-# Zelana
+<p align="center">
+  <a href="https://zelana.org">
+    <img alt="Anza" src="https://raw.githubusercontent.com/Zelana-Labs/media/refs/heads/main/logo-name-2.png" width="250" />
+  </a>
+</p>
 
 ## Prerequisites
 
