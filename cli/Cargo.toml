@@ -1,0 +1,10 @@
+[package]
+name = "cli"
+description = "Zelana CLI"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+serde = {workspace = true}
+serde_json = "1.0"
+zelana-keypair ={ workspace = true}
