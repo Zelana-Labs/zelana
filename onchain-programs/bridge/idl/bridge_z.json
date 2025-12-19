@@ -10,7 +10,7 @@
           "isMut": true,
           "isSigner": true,
           "docs": [
-            "Fee payer and account creator"
+            "Fee payer"
           ]
         },
         {
@@ -34,7 +34,7 @@
           "isMut": false,
           "isSigner": false,
           "docs": [
-            "The System Program"
+            "System Program"
           ]
         }
       ],
@@ -91,7 +91,7 @@
           "isMut": false,
           "isSigner": false,
           "docs": [
-            "The System Program"
+            "System Program"
           ]
         }
       ],
@@ -156,7 +156,7 @@
           "isMut": false,
           "isSigner": false,
           "docs": [
-            "The System Program"
+            "System Program"
           ]
         }
       ],
@@ -171,6 +171,55 @@
       "discriminant": {
         "type": "u8",
         "value": 2
+      }
+    },
+    {
+      "name": "SubmitBatch",
+      "accounts": [
+        {
+          "name": "sequencer",
+          "isMut": false,
+          "isSigner": true,
+          "docs": [
+            "The authorized sequencer submitting the batch"
+          ]
+        },
+        {
+          "name": "config",
+          "isMut": true,
+          "isSigner": false,
+          "docs": [
+            "The bridge's config account"
+          ]
+        },
+        {
+          "name": "verifierProgram",
+          "isMut": false,
+          "isSigner": false,
+          "docs": [
+            "The SP1 Verifier Program (Optional)"
+          ]
+        },
+        {
+          "name": "systemProgram",
+          "isMut": false,
+          "isSigner": false,
+          "docs": [
+            "System Program"
+          ]
+        }
+      ],
+      "args": [
+        {
+          "name": "submitBatchParams",
+          "type": {
+            "defined": "SubmitBatchParams"
+          }
+        }
+      ],
+      "discriminant": {
+        "type": "u8",
+        "value": 3
       }
     }
   ],
@@ -192,6 +241,19 @@
                 32
               ]
             }
+          },
+          {
+            "name": "stateRoot",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "batchIndex",
+            "type": "u64"
           },
           {
             "name": "bump",
@@ -259,6 +321,14 @@
                 32
               ]
             }
+          },
+          {
+            "name": "recipient",
+            "type": "publicKey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
           },
           {
             "name": "used",
@@ -364,10 +434,27 @@
           }
         ]
       }
+    },
+    {
+      "name": "SubmitBatchParams",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "newStateRoot",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          }
+        ]
+      }
     }
   ],
   "metadata": {
     "origin": "shank",
-    "address": "9cPwbqjCvBBDMJYZNUDpV2sc5iA4H3Z12wN3p9vxhmmQ"
+    "address": "95sWqtU9fdm19cvQYu94iKijRuYAv3wLqod1pcsSfYth"
   }
 }
