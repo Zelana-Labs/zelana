@@ -21,4 +21,22 @@ impl PublicKeys {
         hasher.update(&self.privacy_pk);
         AccountId(hasher.finalize().into())
     }
+
+    /// Returns the Ed25519 public key as Base58
+    pub fn signer_pk_bs58(&self) -> String {
+        bs58::encode(self.signer_pk).into_string()
+    }
+
+    /// Returns the X25519 public key as Base58
+    pub fn privacy_pk_bs58(&self) -> String {
+        bs58::encode(self.privacy_pk).into_string()
+    }
+
+    /// Convenience: return both as Base58
+    pub fn as_bs58(&self) -> (String, String) {
+        (
+            bs58::encode(self.signer_pk).into_string(),
+            bs58::encode(self.privacy_pk).into_string(),
+        )
+    }
 }
