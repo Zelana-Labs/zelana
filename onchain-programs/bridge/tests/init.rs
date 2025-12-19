@@ -1,8 +1,7 @@
 mod common;
 use bridge_z::{helpers::StateDefinition, state::Config, ID};
 use common::TestFixture;
-use pinocchio::{pubkey::Pubkey};
-use solana_sdk::{program_error::ProgramError, signer::Signer};
+use solana_sdk::{signer::Signer};
 #[test]
 fn test_initialize_bridge_success(){
     let mut fixture = TestFixture::new();

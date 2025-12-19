@@ -1,11 +1,11 @@
-use bytemuck::{Pod, Zeroable};
 use crate::helpers::{Initialized, StateDefinition};
+use bytemuck::{Pod, Zeroable};
 
-#[derive(Pod, Zeroable, Debug, Clone, Copy, PartialEq,shank::ShankAccount)]
+#[derive(Pod, Zeroable, Debug, Clone, Copy, PartialEq, shank::ShankAccount)]
 #[repr(C)]
 pub struct Vault {
     pub bump: u8,
-    pub _padding: [u8; 7], 
+    pub _padding: [u8; 7],
 }
 
 impl StateDefinition for Vault {

@@ -3,9 +3,9 @@ members = [
     "cli",
     "core",
     "prover",
-    "onchain-programs/bridge",
     #"onchain-programs/verifier",
 ]
+exclude = ["onchain-programs/bridge"]
 resolver = "3"
 
 [workspace.package]
