@@ -5,7 +5,6 @@ use bridge_z::{
 };
 use solana_sdk::{
     instruction::{AccountMeta, Instruction},
-    program_error::ProgramError,
     pubkey::Pubkey,
     signature::Keypair,
     signer::Signer,
@@ -88,8 +87,8 @@ fn test_withdraw_unauthorized_sequencer_fails() {
     let withdraw_amount = 500_000_000;
     let nullifier = [2u8; 32];
 
-    let config_pda = fixture.config_pda;
-    let vault_pda = fixture.vault_pda;
+    let _config_pda = fixture.config_pda;
+    let _vault_pda = fixture.vault_pda;
 
     let (nullifier_pda, _) = Pubkey::find_program_address(&[UsedNullifier::SEED.as_bytes(), fixture.config_pda.as_ref(), &nullifier], &pubkey);
     let ix_data = WithdrawAttestedParams { amount: withdraw_amount, recipient: recipient.pubkey().to_bytes(), nullifier };
@@ -183,7 +182,7 @@ fn test_withdraw_replay_fails() {
 
     // 3. Verification
     assert!(second_result.is_err(), "Second withdrawal (replay) should have failed");
-    let tx_error = second_result.unwrap_err().err;
+    let _tx_error = second_result.unwrap_err().err;
     // assert_eq!(tx_error, ProgramError::AccountAlreadyInitialized);
 }
 

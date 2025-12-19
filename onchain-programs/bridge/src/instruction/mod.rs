@@ -1,6 +1,5 @@
 use bytemuck::{Pod, Zeroable};
 use pinocchio::{program_error::ProgramError, pubkey::Pubkey};
-use shank::*;
 
 use crate::helpers::DataLen;
 

@@ -114,7 +114,7 @@ fn test_deposit_replay_fails() {
 
     assert!(second_result.is_err(), "Second deposit (replay) should have failed");
 
-    let tx_error = second_result.unwrap_err().err;
+    let _tx_error = second_result.unwrap_err().err;
     // assert_eq!(tx_error, ProgramError::AccountAlreadyInitialized);
 }
 

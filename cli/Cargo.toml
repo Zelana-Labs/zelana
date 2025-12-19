@@ -1,8 +1,8 @@
 [package]
 name = "cli"
 description = "Zelana CLI"
-version.workspace = true
-edition.workspace = true
+version = { workspace = true }
+edition = { workspace = true }
 
 [dependencies]
 serde = {workspace = true}

@@ -2,9 +2,8 @@ use pinocchio::{
     account_info::AccountInfo,
     instruction::{Seed, Signer},
     program_error::ProgramError,
-    pubkey::{self, Pubkey},
-    sysvars::{rent::Rent, Sysvar},
-    ProgramResult,
+    pubkey::{ Pubkey},
+    sysvars::{rent::Rent},
 };
 use pinocchio_system::instructions::CreateAccount;
 
