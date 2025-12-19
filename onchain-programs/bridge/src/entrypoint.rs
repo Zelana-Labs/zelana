@@ -35,5 +35,9 @@ fn process_instruction(
             instruction::withdraw::process_withdraw_attested(program_id, accounts, data)?;
             Ok(())
         }
+         BridgeIx::SubmitBatch => {
+            instruction::submit_batch::process_submit_batch(program_id, accounts, data)?;
+            Ok(())
+        }
     }   
 }

@@ -1,55 +1,57 @@
+use bytemuck::{Pod, Zeroable};
 use pinocchio::{program_error::ProgramError, pubkey::Pubkey};
-use bytemuck::{Pod,Zeroable};
 use shank::*;
 
 use crate::helpers::DataLen;
 
 pub mod deposit;
 pub mod init;
+pub mod submit_batch;
 pub mod withdraw;
 
 #[repr(u8)]
-pub enum BridgeIx{
+pub enum BridgeIx {
     INIT = 0,
     DEPOSIT = 1,
-    WITHDRAWATTESTED= 2
+    WITHDRAWATTESTED = 2,
+    SubmitBatch = 3,
 }
 
-impl TryFrom<&u8> for BridgeIx  {
+impl TryFrom<&u8> for BridgeIx {
     type Error = ProgramError;
-     fn try_from(value: &u8) -> Result<Self, Self::Error> {
+    fn try_from(value: &u8) -> Result<Self, Self::Error> {
         match *value {
             0 => Ok(BridgeIx::INIT),
-            1=>Ok(BridgeIx::DEPOSIT),
-            2=>Ok(BridgeIx::WITHDRAWATTESTED),
-            _=>Err(ProgramError::InvalidInstructionData)
+            1 => Ok(BridgeIx::DEPOSIT),
+            2 => Ok(BridgeIx::WITHDRAWATTESTED),
+            3 => Ok(BridgeIx::SubmitBatch),
+            _ => Err(ProgramError::InvalidInstructionData),
         }
     }
 }
-#[derive(Pod,Zeroable,Clone, Copy, Debug, PartialEq, shank::ShankType)]
+#[derive(Pod, Zeroable, Clone, Copy, Debug, PartialEq, shank::ShankType)]
 #[repr(C)]
-pub struct InitParams{
-    pub sequencer_authority:Pubkey,
-    pub domain:[u8;32]
+pub struct InitParams {
+    pub sequencer_authority: Pubkey,
+    pub domain: [u8; 32],
 }
 
 impl DataLen for InitParams {
     const LEN: usize = core::mem::size_of::<InitParams>();
 }
 
-#[derive(Pod,Zeroable,Clone, Copy,shank::ShankType)]
+#[derive(Pod, Zeroable, Clone, Copy, shank::ShankType)]
 #[repr(C)]
-pub struct DepositParams{
-    pub amount:u64,
-    pub nonce:u64
+pub struct DepositParams {
+    pub amount: u64,
+    pub nonce: u64,
 }
 
-impl DataLen for DepositParams{
+impl DataLen for DepositParams {
     const LEN: usize = core::mem::size_of::<DepositParams>();
 }
 
-
-#[derive(Pod, Zeroable, Clone, Copy,shank::ShankType)]
+#[derive(Pod, Zeroable, Clone, Copy, shank::ShankType)]
 #[repr(C)]
 pub struct WithdrawAttestedParams {
     pub recipient: Pubkey,
@@ -57,13 +59,22 @@ pub struct WithdrawAttestedParams {
     pub nullifier: [u8; 32],
 }
 
-impl DataLen for WithdrawAttestedParams{
+impl DataLen for WithdrawAttestedParams {
     const LEN: usize = core::mem::size_of::<WithdrawAttestedParams>();
 }
 
+#[derive(Pod, Zeroable, Clone, Copy, Debug, shank::ShankType)]
+#[repr(C)]
+pub struct SubmitBatchParams {
+    pub new_state_root: [u8; 32],
+}
 
-mod idl_gen{
-    use super::{DepositParams,InitParams,WithdrawAttestedParams};
+impl DataLen for SubmitBatchParams {
+    const LEN: usize = core::mem::size_of::<SubmitBatchParams>();
+}
+
+mod idl_gen {
+    use super::{DepositParams, InitParams, SubmitBatchParams, WithdrawAttestedParams};
     #[derive(shank::ShankInstruction)]
     #[rustfmt::skip]
     enum _BridgeInstruction{
@@ -87,5 +98,11 @@ mod idl_gen{
         #[account(4, writable, name="used_nullifier", desc="The nullifier PDA to prevent replay attacks")]
         #[account(5, name="system_program", desc="System Program")]
         WithdrawAttested(WithdrawAttestedParams),
+
+        #[account(0, signer, name="sequencer", desc="The authorized sequencer submitting the batch")]
+        #[account(1, writable, name="config", desc="The bridge's config account")]
+        #[account(2, name="verifier_program", desc="The SP1 Verifier Program (Optional)")]
+        #[account(3, name="system_program", desc="System Program")]
+        SubmitBatch(SubmitBatchParams),
     }
 }

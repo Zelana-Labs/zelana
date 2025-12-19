@@ -806,6 +806,7 @@ dependencies = [
  "pinocchio-system",
  "pinocchio-token",
  "shank",
+ "solana-program 3.0.0",
  "solana-sdk 2.2.1",
 ]
 
@@ -3497,9 +3498,9 @@ dependencies = [
 
 [[package]]
 name = "pinocchio-system"
-version = "0.3.0"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "141ed5eafb4ab04568bb0e224e3dc9a9de13c933de4c004e0d1a553498be3a7c"
+checksum = "4be2a6dad40b5e75d1486f021619c4bd504c34c1362c9b94ed7fa525b1cc63cc"
 dependencies = [
  "pinocchio",
  "pinocchio-pubkey",

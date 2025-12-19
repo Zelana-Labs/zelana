@@ -1,14 +1,16 @@
-use bytemuck::{Pod,Zeroable};
+use bytemuck::{Pod, Zeroable};
 use pinocchio::pubkey::Pubkey;
 
 use crate::helpers::{Initialized, StateDefinition};
 
-#[derive(Pod, Zeroable, Debug, Clone, Copy, PartialEq,shank::ShankAccount)]
+#[derive(Pod, Zeroable, Debug, Clone, Copy, PartialEq, shank::ShankAccount)]
 #[repr(C)]
-pub struct UsedNullifier{
-    pub nullifier:[u8;32],
-    pub used:u8,
-    pub bump:u8,
+pub struct UsedNullifier {
+    pub nullifier: [u8; 32],
+    pub recipient: Pubkey,
+    pub amount: u64,
+    pub used: u8,
+    pub bump: u8,
     pub _padding: [u8; 6],
 }
 
@@ -26,9 +28,11 @@ impl Initialized for UsedNullifier {
 
 impl UsedNullifier {
     /// Initializes a new UsedNullifier state.
-    pub fn new(&mut self, nullifier: [u8; 32], bump: u8) {
+    pub fn new(&mut self, nullifier: [u8; 32], recipient: Pubkey, amount: u64, bump: u8) {
         self.nullifier = nullifier;
-        self.used = 1; // Mark as used immediately upon creation
+        self.recipient = recipient;
+        self.amount = amount;
+        self.used = 1;
         self.bump = bump;
         self._padding = [0; 6];
     }

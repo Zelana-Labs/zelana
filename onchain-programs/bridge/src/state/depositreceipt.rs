@@ -1,11 +1,11 @@
-use bytemuck::{Pod,Zeroable};
-use pinocchio::{account_info::AccountInfo, program_error::ProgramError, pubkey::Pubkey};
+use bytemuck::{Pod, Zeroable};
+use pinocchio::pubkey::Pubkey;
 
 use crate::helpers::{Initialized, StateDefinition};
 
-#[derive(Pod, Zeroable, Debug, Clone, Copy, PartialEq,shank::ShankAccount)]
+#[derive(Pod, Zeroable, Debug, Clone, Copy, PartialEq, shank::ShankAccount)]
 #[repr(C)]
-pub struct DepositReceipt{
+pub struct DepositReceipt {
     pub depositor: Pubkey,
     pub amount: u64,
     pub nonce: u64,
@@ -13,7 +13,6 @@ pub struct DepositReceipt{
     pub bump: u8,
     pub _padding: [u8; 7],
 }
-
 
 impl StateDefinition for DepositReceipt {
     const LEN: usize = core::mem::size_of::<DepositReceipt>();
