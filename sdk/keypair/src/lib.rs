@@ -1,4 +1,6 @@
+use bs58;
 use chacha20poly1305::aead::OsRng;
+use chacha20poly1305::aead::rand_core::RngCore;
 use ed25519_dalek::{Signer, SigningKey};
 use x25519_dalek::{PublicKey as X25519PublicKey, StaticSecret};
 use zelana_account::AccountId;
@@ -15,7 +17,12 @@ pub struct Keypair {
 impl Keypair {
     /// Generates a fresh random wallet.
     pub fn new_random() -> Self {
-        let signing_key = SigningKey::generate(&mut OsRng);
+        let mut rng = OsRng;
+
+        // Ed25519 signing key (via raw bytes)
+        let mut seed = [0u8; 32];
+        rng.fill_bytes(&mut seed);
+        let signing_key = SigningKey::from_bytes(&seed);
         let privacy_key = StaticSecret::random_from_rng(OsRng);
 
         Self {
@@ -62,5 +69,31 @@ impl Keypair {
             signature,
             signer_pubkey: self.signing_key.verifying_key().to_bytes(),
         }
+    }
+
+      /// Exports the keypair as a 64-byte seed (for saving to file).
+    /// ⚠️ SENSITIVE: Only use this for encrypted storage!
+    pub fn to_seed(&self) -> [u8; 64] {
+        let mut seed = [0u8; 64];
+        seed[0..32].copy_from_slice(&self.signing_key.to_bytes());
+        seed[32..64].copy_from_slice(&self.privacy_key.to_bytes());
+        seed
+    }
+
+    /// Loads a keypair from a JSON file (Solana CLI format).
+    pub fn from_file(path: &str) -> std::io::Result<Self> {
+        let contents = std::fs::read_to_string(path)?;
+        let bytes: Vec<u8> = serde_json::from_str(&contents)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+        
+        if bytes.len() != 64 {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "Invalid keypair file: expected 64 bytes"
+            ));
+        }
+        
+        let seed: [u8; 64] = bytes.try_into().unwrap();
+        Ok(Self::from_seed(&seed))
     }
 }
