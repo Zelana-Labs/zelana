@@ -1,7 +1,8 @@
 [workspace]
 members = [
     "cli",
-    "core",
+    "core", 
+    "debug/db",
     "prover",
     #"onchain-programs/verifier",
 ]
