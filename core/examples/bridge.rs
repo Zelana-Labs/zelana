@@ -13,7 +13,7 @@ use zelana_transaction::DepositParams;
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     // 1. Config: localnet requires manual bridge deployment
-    let rpc_url = "https://api.devnet.solana.com";
+    let rpc_url = "http://127.0.0.1:8899";
     // We default to the ID you likely deployed. Change if different!
     let bridge_id_str = env::var("BRIDGE_PROGRAM_ID")
         .unwrap_or_else(|_| "DouWDzYTAxi5c3ui695xqozJuP9SpAutDcTbyQnkAguo".to_string());
@@ -21,6 +21,7 @@ async fn main() -> anyhow::Result<()> {
 
     // 2. Setup User (The Depositor)
     let payer = Keypair::new();
+    println!("depositor: {:?}", payer.pubkey());
     let rpc = RpcClient::new_with_commitment(rpc_url.to_string(), CommitmentConfig::confirmed());
 
     println!("Airdropping SOL to  {}...", payer.pubkey());

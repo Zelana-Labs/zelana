@@ -29,7 +29,7 @@ async fn main() -> anyhow::Result<()> {
 
     let db_handle = executor.db.clone();
     tokio::spawn(async move {
-        let bridge_id = env::var("BRIDGE_PROGRAM_ID").unwrap_or_else(|_| "GuiZ...".to_string());
+        let bridge_id = env::var("BRIDGE_PROGRAM_ID").unwrap_or_else(|_| "DouWDzYTAxi5c3ui695xqozJuP9SpAutDcTbyQnkAguo".to_string());
         let wss_url =
             env::var("SOLANA_WSS_URL").unwrap_or_else(|_| "ws://127.0.0.1:8900".to_string());
 
