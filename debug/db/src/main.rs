@@ -1,41 +1,139 @@
-use std::{env, path::PathBuf, sync::Arc};
+use std::env;
+use std::path::PathBuf;
+use std::collections::HashMap;
 
 use rocksdb::{IteratorMode, Options, ColumnFamilyDescriptor, DB};
 use anyhow::{Context, Result};
-use zelana_account::{AccountState, AccountId};
+use zelana_account::{AccountState};
 use hex;
 
 const CF_ACCOUNTS: &str = "accounts";
+
 
 #[tokio::main]
 async fn main() -> Result<()> {
     dotenvy::dotenv().ok();
 
     let db_path = env::var("DB_PATH").unwrap_or_else(|_| "./data/sequencer_db".to_string());
-    let rocks_path = PathBuf::from(&db_path);
+    
+    // Enable raw mode for better terminal control
+    crossterm::terminal::enable_raw_mode()?;
+    
+    // Print header once
+    print!("\x1B[2J\x1B[1;1H"); // Clear screen
+    println!("╔════════════════════════════════════════════════════════════════════╗\r");
+    println!("║              ROCKSDB DATABASE INSPECTOR (LIVE MODE)                ║\r");
+    println!("╚════════════════════════════════════════════════════════════════════╝\r");
+    println!("\r");
+    println!("[Auto-refresh every 2s. Press 'q' to quit]\r");
+    println!("\r");
+    std::io::Write::flush(&mut std::io::stdout()).unwrap();
+    
+    let mut previous_accounts: HashMap<String, AccountState> = HashMap::new();
+    let mut db_info_line = 6; // Track where we print db info
+    
+    // Handle Ctrl+C gracefully
+    let (tx, mut rx) = tokio::sync::mpsc::channel(1);
+    tokio::spawn(async move {
+        loop {
+            if crossterm::event::poll(std::time::Duration::from_millis(100)).unwrap() {
+                if let Ok(event) = crossterm::event::read() {
+                    if let crossterm::event::Event::Key(key) = event {
+                        if key.code == crossterm::event::KeyCode::Char('q') {
+                            let _ = tx.send(()).await;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+    });
+    
+    loop {
+        tokio::select! {
+            _ = tokio::time::sleep(tokio::time::Duration::from_secs(2)) => {
+                match inspect_and_update(&db_path, &mut previous_accounts, &mut db_info_line) {
+                    Ok(_) => {},
+                    Err(e) => {
+                        print!("\x1B[{};1H", db_info_line);
+                        print!("\x1B[K❌ Error: {:?}\r", e);
+                        db_info_line += 1;
+                        std::io::Write::flush(&mut std::io::stdout()).unwrap();
+                    }
+                }
+            }
+            _ = rx.recv() => {
+                break;
+            }
+        }
+    }
+    
+    // Cleanup
+    crossterm::terminal::disable_raw_mode()?;
+    println!("\n👋 Exiting inspector...\n");
+    
+    Ok(())
+}
 
-    // Open the database the same way as your RocksDbStore
+fn inspect_and_update(
+    db_path: &str, 
+    previous_accounts: &mut HashMap<String, AccountState>,
+    db_info_line: &mut usize,
+) -> Result<()> {
+    let rocks_path = PathBuf::from(db_path);
+
+    // Open the database
     let mut opts = Options::default();
-    opts.create_if_missing(false); // Don't create if inspecting
+    opts.create_if_missing(false);
     opts.create_missing_column_families(false);
+    opts.set_max_open_files(16);
 
     let cf_opts = Options::default();
-    let families = vec![ColumnFamilyDescriptor::new(CF_ACCOUNTS, cf_opts)];
 
-    let db = DB::open_cf_descriptors(&opts, &rocks_path, families)
-        .map_err(|e| anyhow::anyhow!("Failed to open RocksDB: {}", e))?;
-
-    println!("\n╔════════════════════════════════════════════════════════════════════╗");
-    println!("║                      ROCKSDB DATABASE INSPECTOR                    ║");
-    println!("║ Path: {:<58} ║", truncate(&rocks_path.display().to_string(), 58));
-    println!("╚════════════════════════════════════════════════════════════════════╝");
-
-    // ========== ACCOUNTS ==========
-    let cf = db
-        .cf_handle(CF_ACCOUNTS)
-        .context("Column family 'accounts' missing")?;
+    let (db, is_secondary) = match DB::open_cf_descriptors_read_only(
+        &opts, 
+        &rocks_path, 
+        vec![ColumnFamilyDescriptor::new(CF_ACCOUNTS, cf_opts.clone())], 
+        false
+    ) {
+        Ok(db) => (db, false),
+        Err(_) => {
+            let secondary_path = PathBuf::from(format!("{}_secondary", db_path));
+            let secondary_db = DB::open_cf_as_secondary(
+                &opts, 
+                &rocks_path, 
+                &secondary_path, 
+                &[CF_ACCOUNTS]
+            ).context("Failed to open as secondary")?;
+            (secondary_db, true)
+        }
+    };
     
-    let mut rows: Vec<Vec<String>> = Vec::new();
+    // Sync with primary if using secondary instance
+    if is_secondary {
+        db.try_catch_up_with_primary()
+            .context("Failed to sync with primary")?;
+    }
+
+    // Update database info
+    *db_info_line = 6;
+    print!("\x1B[{};1H", *db_info_line);
+    *db_info_line += 1;
+    
+    let db_size = get_directory_size(&rocks_path)?;
+    print!("\x1B[K📂 Path: {} | 💾 Size: {} | ⏰ {}\r", 
+        truncate(&rocks_path.display().to_string(), 30),
+        format_size(db_size),
+        chrono::Local::now().format("%H:%M:%S")
+    );
+    
+    print!("\x1B[{};1H", *db_info_line);
+    *db_info_line += 1;
+    print!("\x1B[K\r");
+
+    // Get current accounts
+    let cf = db.cf_handle(CF_ACCOUNTS).context("Column family 'accounts' missing")?;
+    let mut current_accounts: HashMap<String, AccountState> = HashMap::new();
 
     for entry in db.iterator_cf(&cf, IteratorMode::Start) {
         let (key_bytes, value_bytes) = entry?;
@@ -43,54 +141,70 @@ async fn main() -> Result<()> {
         if key_bytes.len() == 32 {
             let mut account_id = [0u8; 32];
             account_id.copy_from_slice(&key_bytes);
+            let account_hex = hex::encode(account_id);
             
-            // Deserialize using wincode (match your implementation)
-            match wincode::deserialize::<AccountState>(&value_bytes) {
-                Ok(state) => {
-                    rows.push(vec![
-                        hex::encode(account_id),
-                        state.balance.to_string(),
-                    ]);
-                }
-                Err(e) => {
-                    rows.push(vec![
-                        hex::encode(account_id),
-                        format!("Error: {}", e),
-                    ]);
-                }
+            if let Ok(state) = wincode::deserialize::<AccountState>(&value_bytes) {
+                current_accounts.insert(account_hex, AccountState { balance: state.balance, nonce: 0 });
             }
         }
     }
 
-    print_table_header("ACCOUNTS", rows.len());
-    if rows.is_empty() {
-        print_empty_table();
-    } else {
-        print_wrapped_table(
-            &["Account ID", "Balance"],
-            &[64, 20],
-            &["<", ">"],
-            &rows,
-        );
+    // Always redraw the table structure for now (simpler and more reliable)
+    let start_line = *db_info_line;
+    let mut current_line = start_line;
+    
+    print!("\x1B[{};1H", current_line);
+    current_line += 1;
+    print!("\x1B[K┌────────────────────────────────────────────────────────────────────┐\r");
+    
+    print!("\x1B[{};1H", current_line);
+    current_line += 1;
+    print!("\x1B[K│  {:^62} │\r", format!("ACCOUNTS ({})", current_accounts.len()));
+    
+    print!("\x1B[{};1H", current_line);
+    current_line += 1;
+    print!("\x1B[K└────────────────────────────────────────────────────────────────────┘\r");
+    
+    print!("\x1B[{};1H", current_line);
+    current_line += 1;
+    print!("\x1B[K╔══════════════════════════════════════════════════════════════════╦══════════════════════╗\r");
+    
+    print!("\x1B[{};1H", current_line);
+    current_line += 1;
+    print!("\x1B[K║ {:^64} ║ {:>20} ║\r", "Account ID", "Balance");
+    
+    print!("\x1B[{};1H", current_line);
+    current_line += 1;
+    print!("\x1B[K╠══════════════════════════════════════════════════════════════════╬══════════════════════╣\r");
+
+    // Print all account rows
+    let mut sorted_accounts: Vec<_> = current_accounts.iter().collect();
+    sorted_accounts.sort_by_key(|(k, _)| *k);
+
+    for (account_id, data) in sorted_accounts {
+        print!("\x1B[{};1H", current_line);
+        current_line += 1;
+        print!("\x1B[K║ {:<64} ║ {:>20} ║\r", account_id, data.balance);
     }
 
-    println!("\n╔════════════════════════════════════════════════════════════════════╗");
-    println!("║                     INSPECTION COMPLETE                            ║");
-    println!("╚════════════════════════════════════════════════════════════════════╝\n");
+    // Print bottom border
+    print!("\x1B[{};1H", current_line);
+    current_line += 1;
+    print!("\x1B[K╚══════════════════════════════════════════════════════════════════╩══════════════════════╝\r");
+    
+    // Clear any extra lines below
+    for _ in 0..5 {
+        print!("\x1B[{};1H", current_line);
+        current_line += 1;
+        print!("\x1B[K\r");
+    }
+    
+    std::io::Write::flush(&mut std::io::stdout()).unwrap();
+
+    *previous_accounts = current_accounts;
+    *db_info_line = current_line;
 
     Ok(())
-}
-
-fn print_table_header(name: &str, count: usize) {
-    println!("┌────────────────────────────────────────────────────────────────────┐");
-    println!("│ 📊 {:^62} │", format!("{} ({})", name, count));
-    println!("└────────────────────────────────────────────────────────────────────┘");
-}
-
-fn print_empty_table() {
-    println!("╔════════════════════════════════════════════════════════════════════╗");
-    println!("║                            (No data)                               ║");
-    println!("╚════════════════════════════════════════════════════════════════════╝");
 }
 
 fn truncate(s: &str, max_len: usize) -> String {
@@ -101,113 +215,43 @@ fn truncate(s: &str, max_len: usize) -> String {
     }
 }
 
-/// Generic table printer with wrapping.
-fn print_wrapped_table(
-    headers: &[&str],
-    widths: &[usize],
-    aligns: &[&str],
-    rows: &[Vec<String>],
-) {
-    assert_eq!(headers.len(), widths.len());
-    assert_eq!(widths.len(), aligns.len());
-
-    // top border
-    print!("╔");
-    for (i, w) in widths.iter().enumerate() {
-        print!("{}", "═".repeat(w + 2));
-        if i < widths.len() - 1 {
-            print!("╦");
-        }
-    }
-    println!("╗");
-
-    // header row
-    print!("║");
-    for ((h, w), _) in headers.iter().zip(widths.iter()).zip(aligns.iter()) {
-        let formatted = format!("{:^width$}", h, width = *w);
-        print!(" {} ║", formatted);
-    }
-    println!();
-
-    // header separator
-    print!("╠");
-    for (i, w) in widths.iter().enumerate() {
-        print!("{}", "═".repeat(w + 2));
-        if i < widths.len() - 1 {
-            print!("╬");
-        }
-    }
-    println!("╣");
-
-    // data rows
-    for (row_idx, row) in rows.iter().enumerate() {
-        let is_last = row_idx == rows.len() - 1;
-        print_wrapped_row(row, widths, aligns, is_last);
-    }
-
-    // bottom border
-    if !rows.is_empty() {
-        print!("╚");
-        for (i, w) in widths.iter().enumerate() {
-            print!("{}", "═".repeat(w + 2));
-            if i < widths.len() - 1 {
-                print!("╩");
+fn get_directory_size(path: &PathBuf) -> Result<u64> {
+    let mut total_size = 0u64;
+    
+    if path.is_dir() {
+        for entry in std::fs::read_dir(path)? {
+            let entry = entry?;
+            let metadata = entry.metadata()?;
+            
+            if metadata.is_file() {
+                total_size += metadata.len();
+            } else if metadata.is_dir() {
+                total_size += get_directory_size(&entry.path())?;
             }
         }
-        println!("╝");
     }
+    
+    Ok(total_size)
 }
 
-/// Wrap a single cell string into multiple lines of at most `width` chars.
-fn wrap_cell(s: &str, width: usize) -> Vec<String> {
-    if s.is_empty() {
-        return vec![String::new()];
+fn format_size(bytes: u64) -> String {
+    const UNITS: &[&str] = &["B", "KB", "MB", "GB", "TB"];
+    
+    if bytes == 0 {
+        return "0 B".to_string();
     }
-    let mut out = Vec::new();
-    let mut i = 0;
-    while i < s.len() {
-        let end = (i + width).min(s.len());
-        out.push(s[i..end].to_string());
-        i = end;
+    
+    let mut size = bytes as f64;
+    let mut unit_index = 0;
+    
+    while size >= 1024.0 && unit_index < UNITS.len() - 1 {
+        size /= 1024.0;
+        unit_index += 1;
     }
-    out
-}
-
-/// Print one logical table row, wrapping long cells onto multiple lines.
-fn print_wrapped_row(cells: &[String], widths: &[usize], aligns: &[&str], is_last: bool) {
-    let wrapped: Vec<Vec<String>> = cells
-        .iter()
-        .zip(widths.iter())
-        .map(|(s, &w)| wrap_cell(s, w))
-        .collect();
-
-    let max_lines = wrapped.iter().map(|lines| lines.len()).max().unwrap_or(0);
-
-    for line_idx in 0..max_lines {
-        print!("║");
-        for (col_idx, col_lines) in wrapped.iter().enumerate() {
-            let w = widths[col_idx];
-            let content = col_lines.get(line_idx).map(|s| s.as_str()).unwrap_or("");
-
-            let formatted = match aligns[col_idx] {
-                ">" => format!("{:>width$}", content, width = w),
-                "^" => format!("{:^width$}", content, width = w),
-                _ => format!("{:<width$}", content, width = w),
-            };
-
-            print!(" {} ║", formatted);
-        }
-        println!();
-    }
-
-    if !is_last {
-        print!("╟");
-        for (i, &w) in widths.iter().enumerate() {
-            print!("{}", "─".repeat(w + 2));
-            if i < widths.len() - 1 {
-                print!("╫");
-            }
-        }
-        println!("╢");
+    
+    if unit_index == 0 {
+        format!("{} {}", bytes, UNITS[unit_index])
+    } else {
+        format!("{:.2} {}", size, UNITS[unit_index])
     }
 }
