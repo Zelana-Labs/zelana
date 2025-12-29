@@ -48,9 +48,10 @@ fn test_submit_batch_success() {
     let accounts = vec![
         AccountMeta::new(fixture.sequencer.pubkey(), true),
         AccountMeta::new(fixture.config_pda, false),
-        AccountMeta::new_readonly(fixture.vault_pda, false),
-        AccountMeta::new_readonly(dummy_verifier, false), // verifier (unused)
-        AccountMeta::new_readonly(system_program::ID, false),
+        // AccountMeta::new_readonly(fixture.vault_pda, false),
+        // AccountMeta::new_readonly(system_program::ID, false),
+        // AccountMeta::new_readonly(system_program::ID, false),
+
     ];
 
     let ix = Instruction {
@@ -99,9 +100,9 @@ fn test_submit_batch_wrong_sequencer_fails() {
     let accounts = vec![
         AccountMeta::new(unauthorized.pubkey(), true),
         AccountMeta::new(fixture.config_pda, false),
-        AccountMeta::new_readonly(fixture.vault_pda, false),
-        AccountMeta::new_readonly(system_program::ID, false),
-        AccountMeta::new_readonly(system_program::ID, false),
+        // AccountMeta::new_readonly(fixture.vault_pda, false),
+        // AccountMeta::new_readonly(system_program::ID, false),
+        // AccountMeta::new_readonly(system_program::ID, false),
     ];
 
     let ix = Instruction {
@@ -135,9 +136,9 @@ fn test_submit_batch_replay_fails() {
     let accounts = vec![
         AccountMeta::new(fixture.sequencer.pubkey(), true),
         AccountMeta::new(fixture.config_pda, false),
-        AccountMeta::new_readonly(fixture.vault_pda, false),
-        AccountMeta::new_readonly(system_program::ID, false),
-        AccountMeta::new_readonly(system_program::ID, false),
+        // AccountMeta::new_readonly(fixture.vault_pda, false),
+        // AccountMeta::new_readonly(system_program::ID, false),
+        // AccountMeta::new_readonly(system_program::ID, false),
     ];
 
     let ix = Instruction {

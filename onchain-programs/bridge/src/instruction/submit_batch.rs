@@ -15,18 +15,19 @@ pub fn process_submit_batch(
     accounts: &[AccountInfo],
     ix_data: &[u8],
 ) -> ProgramResult {
-    log!("hi");
-    if accounts.len() < 5 {
+    if accounts.len() < 2 {
         return Err(ProgramError::NotEnoughAccountKeys);
     }
 
     let sequencer = &accounts[0];
     let config_account = &accounts[1];
-    let _vault = &accounts[2];
-    let _verifier_program = &accounts[3];
-    let _system_program = &accounts[4];
+    // use this for later cpi into the verifier program
+    // let _vault = &accounts[2];
+    // let _verifier_program = &accounts[3];
+    // let _system_program = &accounts[4];
 
-    let recipients_iter = &accounts[5..];
+    let recipients_iter = &accounts[2..];
+
 
     check_signer(sequencer)?;
     let mut config_data = unsafe {
