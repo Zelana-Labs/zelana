@@ -1,4 +1,4 @@
-use pinocchio::{account_info::AccountInfo, program_error::ProgramError};
+use pinocchio::{account_info::AccountInfo, program_error::ProgramError, pubkey::{Pubkey, find_program_address}};
 
 use crate::helpers::StateDefinition;
 
@@ -93,4 +93,57 @@ pub unsafe fn try_from_account_info_mut<T: DataLen>(
     }
 
     unsafe {Ok(&mut *(bytes.as_mut_ptr() as *mut T))}
+}
+
+
+#[inline(always)]
+pub fn derive_config_pda(
+    program_id: &Pubkey,
+    domain: &[u8; 32],
+) -> (Pubkey, u8) {
+    find_program_address(
+        &[b"config", domain.as_ref()],
+        program_id,
+    )
+}
+
+#[inline(always)]
+pub fn derive_deposit_receipt_pda(
+    program_id: &Pubkey,
+    domain: &[u8; 32],
+    depositor: &Pubkey,
+    nonce: u64,
+) -> (Pubkey, u8) {
+    find_program_address(
+        &[
+            b"receipt",
+            domain.as_ref(),
+            depositor.as_ref(),
+            &nonce.to_le_bytes(),
+        ],
+        program_id,
+    )
+}
+
+#[inline(always)]
+pub fn derive_vault_pda(
+    program_id: &Pubkey,
+    domain: &[u8; 32],
+) -> (Pubkey, u8) {
+    find_program_address(
+        &[b"vault", domain.as_ref()],
+        program_id,
+    )
+}
+
+#[inline(always)]
+pub fn derive_nullifier_pda(
+    program_id: &Pubkey,
+    domain: &[u8; 32],
+    nullifier: &[u8; 32],
+) -> (Pubkey, u8) {
+    find_program_address(
+        &[b"nullifier", domain.as_ref(), nullifier],
+        program_id,
+    )
 }

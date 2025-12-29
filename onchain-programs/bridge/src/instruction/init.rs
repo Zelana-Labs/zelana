@@ -2,17 +2,19 @@ use pinocchio::{
     account_info::AccountInfo,
     instruction::{Seed, Signer},
     program_error::ProgramError,
-    pubkey::{find_program_address, Pubkey},
+    pubkey::{ Pubkey},
     sysvars::{rent::Rent, Sysvar},
     ProgramResult,
 };
 use pinocchio_system::instructions::CreateAccount;
 
 use crate::{
-    helpers::{check_signer, load_acc_mut_unchecked, load_ix_data, StateDefinition},
+    helpers::{check_signer, load_acc_mut_unchecked, load_ix_data, StateDefinition,
+    utils::{derive_config_pda,derive_vault_pda}},
     instruction::InitParams,
     state::{Config, Vault},
     ID,
+    
 };
 
 pub fn process_initialize(
@@ -26,33 +28,49 @@ pub fn process_initialize(
 
     check_signer(payer)?;
 
+    // decode ix data
+    let params = unsafe { load_ix_data::<InitParams>(ix_data)? };
+
+    if params.domain == [0u8; 32] {
+        return Err(ProgramError::InvalidInstructionData);
+    }
+
+
+    let (expected_config_pda, config_bump) =
+        derive_config_pda(&ID, &params.domain);
+
+    if config_account.key() != &expected_config_pda {
+        return Err(ProgramError::InvalidSeeds);
+    }
+
+    let (expected_vault_pda, vault_bump) =
+        derive_vault_pda(&ID, &params.domain);
+
+    if vault_account.key() != &expected_vault_pda {
+        return Err(ProgramError::InvalidSeeds);
+    }
+
     if config_account.lamports() > 0 {
         return Err(ProgramError::AccountAlreadyInitialized);
     }
 
-    let (config_pda, config_bump) = find_program_address(&[Config::SEED.as_bytes()], &ID);
-
-    if config_pda != *config_account.key() {
-        return Err(ProgramError::InvalidSeeds);
+    if !config_account.data_is_empty() {
+        return Err(ProgramError::AccountAlreadyInitialized);
     }
 
-    let (vault_pda, vault_bump) = find_program_address(
-        &[Vault::SEED.as_bytes(), config_account.key().as_ref()],
-        &ID,
-    );
-
-    if vault_pda != *vault_account.key() {
-        return Err(ProgramError::InvalidSeeds);
+    if !vault_account.data_is_empty() {
+        return Err(ProgramError::AccountAlreadyInitialized);
     }
 
     let rent = Rent::get()?;
     let bump_bytes = [config_bump];
-    let config_signer_seeds = [
-        Seed::from(Config::SEED.as_bytes()),
+    let config_seeds = [
+        Seed::from(b"config"),
+        Seed::from(params.domain.as_ref()),
         Seed::from(&bump_bytes[..]),
     ];
 
-    let signers = [Signer::from(&config_signer_seeds)];
+    let signers = [Signer::from(&config_seeds)];
 
     CreateAccount {
         from: payer,
@@ -64,13 +82,13 @@ pub fn process_initialize(
     .invoke_signed(&signers)?;
 
     let bump_bytes = [vault_bump];
-    let vault_signer_seeds = [
-        Seed::from(Vault::SEED.as_bytes()),
-        Seed::from(config_account.key().as_ref()),
+    let vault_seeds = [
+        Seed::from(b"vault"),
+        Seed::from(params.domain.as_ref()),
         Seed::from(&bump_bytes[..]),
     ];
 
-    let signers = [Signer::from(&vault_signer_seeds)];
+    let signers = [Signer::from(&vault_seeds)];
 
     CreateAccount {
         from: payer,
@@ -81,15 +99,18 @@ pub fn process_initialize(
     }
     .invoke_signed(&signers)?;
 
-    let ix_data = unsafe { load_ix_data::<InitParams>(&ix_data)? };
 
     let config_data = &mut config_account.try_borrow_mut_data()?;
     let config_state = unsafe { load_acc_mut_unchecked::<Config>(config_data)? };
 
-    config_state.new(ix_data.sequencer_authority, ix_data.domain, config_bump);
+    config_state.new(
+        params.sequencer_authority,
+        params.domain,
+        config_bump,
+    )?;
 
     let vault_account = &mut vault_account.try_borrow_mut_data()?;
     let vault_state = unsafe { load_acc_mut_unchecked::<Vault>(vault_account)? };
-    vault_state.new(vault_bump);
+    vault_state.new(params.domain, vault_bump);
     Ok(())
 }

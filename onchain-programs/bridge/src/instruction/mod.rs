@@ -62,18 +62,31 @@ impl DataLen for WithdrawAttestedParams {
     const LEN: usize = core::mem::size_of::<WithdrawAttestedParams>();
 }
 
-#[derive(Pod, Zeroable, Clone, Copy, Debug, shank::ShankType)]
+#[derive(Pod, Zeroable, Clone, Copy, shank::ShankType)]
 #[repr(C)]
-pub struct SubmitBatchParams {
-    pub new_state_root: [u8; 32],
+pub struct WithdrawalRequest {
+    pub recipient: Pubkey,
+    pub amount: u64,
 }
 
-impl DataLen for SubmitBatchParams {
-    const LEN: usize = core::mem::size_of::<SubmitBatchParams>();
+#[repr(C)]
+#[derive(Pod, Zeroable, Clone, Copy, Debug, PartialEq)]
+pub struct SubmitBatchHeader {
+    pub prev_batch_index: u64,
+    pub new_batch_index: u64,
+    pub new_state_root: [u8; 32],
+    pub proof_len: u32,
+    pub withdrawal_count: u32,
 }
+
+impl DataLen for SubmitBatchHeader {
+    const LEN: usize = core::mem::size_of::<SubmitBatchHeader>();
+}
+
+
 
 mod idl_gen {
-    use super::{DepositParams, InitParams, SubmitBatchParams, WithdrawAttestedParams};
+    use super::{DepositParams, InitParams, SubmitBatchHeader, WithdrawAttestedParams};
     #[derive(shank::ShankInstruction)]
     #[rustfmt::skip]
     enum _BridgeInstruction{
@@ -100,8 +113,9 @@ mod idl_gen {
 
         #[account(0, signer, name="sequencer", desc="The authorized sequencer submitting the batch")]
         #[account(1, writable, name="config", desc="The bridge's config account")]
-        #[account(2, name="verifier_program", desc="The SP1 Verifier Program (Optional)")]
-        #[account(3, name="system_program", desc="System Program")]
-        SubmitBatch(SubmitBatchParams),
+        #[account(2,name="vault",desc="Vault PDA for the domain (read-only, consistency check)")]
+        #[account(3, name="verifier_program", desc="The Verifier Program (Optional)")]
+        #[account(4, name="system_program", desc="System Program")]
+        SubmitBatch(SubmitBatchHeader),
     }
 }

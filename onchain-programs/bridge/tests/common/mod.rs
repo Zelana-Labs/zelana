@@ -2,6 +2,16 @@ use bridge_z::{helpers::StateDefinition, instruction::{BridgeIx, InitParams}, st
 use litesvm::{types::{FailedTransactionMetadata, TransactionMetadata}, LiteSVM};
 use solana_sdk::{instruction::{AccountMeta, Instruction}, message::{v0, VersionedMessage}, pubkey::Pubkey, signature::Keypair, signer::Signer, system_instruction, system_program, transaction::{Transaction, VersionedTransaction}};
 
+pub const TEST_DOMAIN: [u8; 32] = [1u8; 32];
+
+
+pub fn derive_config_pda(program_id: &Pubkey, domain: &[u8; 32]) -> (Pubkey, u8) {
+    Pubkey::find_program_address(&[b"config", domain.as_ref()], program_id)
+}
+
+pub fn derive_vault_pda(program_id: &Pubkey, domain: &[u8; 32]) -> (Pubkey, u8) {
+    Pubkey::find_program_address(&[b"vault", domain.as_ref()], program_id)
+}
 
 pub fn setup_svm_and_program() -> (LiteSVM, Keypair, Keypair, Pubkey) {
     let mut svm = LiteSVM::new();
@@ -23,6 +33,8 @@ pub struct TestFixture{
     pub svm :LiteSVM,
     pub payer : Keypair,
     pub sequencer:Keypair,
+    pub program_id: Pubkey,
+    pub domain: [u8; 32],
     pub config_pda:Pubkey,
     pub vault_pda:Pubkey
 }
@@ -33,21 +45,24 @@ impl TestFixture{
         let payer = Keypair::new();
         let sequencer = Keypair::new();
         svm.airdrop(&payer.pubkey(), 10_000_000_000).unwrap();
-        let  pubket = Pubkey::from(ID);
+        let program_id = Pubkey::from(ID);
 
         svm.airdrop(&sequencer.pubkey(), 10_000_000_000).unwrap();
         
-        svm.add_program_from_file(pubket, "./target/deploy/bridge_z.so").unwrap();
+        svm.add_program_from_file(program_id, "./target/deploy/bridge_z.so").unwrap();
 
-        let (config_pda,_) = Pubkey::find_program_address(&[Config::SEED.as_bytes()], &pubket);
-        let (vault_pda,_) = Pubkey::find_program_address(&[Vault::SEED.as_bytes(), config_pda.as_ref()], &pubket);
+        let domain = TEST_DOMAIN;
+        let (config_pda, _) = derive_config_pda(&program_id, &domain);
+        let (vault_pda, _) = derive_vault_pda(&program_id, &domain);
 
         Self{
             svm,
             payer,
             sequencer,
+            program_id,
+            domain,
             config_pda,
-            vault_pda
+            vault_pda,
         }
     }
     pub fn build_and_send_transaction(
@@ -75,7 +90,7 @@ impl TestFixture{
         let sequencer_pubkey = self.sequencer.pubkey();
         let ix_data = InitParams{
             sequencer_authority: *sequencer_pubkey.as_array(),
-            domain: [1u8;32]
+            domain: self.domain,
         };
         let mut instruction_data = vec![BridgeIx::INIT as u8];
         instruction_data.extend_from_slice(bytemuck::bytes_of(&ix_data));

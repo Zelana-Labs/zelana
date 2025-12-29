@@ -1,5 +1,5 @@
 use bytemuck::{Pod, Zeroable};
-use pinocchio::pubkey::Pubkey;
+use pinocchio::{program_error::ProgramError, pubkey::Pubkey};
 
 use crate::helpers::{Initialized, StateDefinition};
 
@@ -13,27 +13,37 @@ pub struct Config {
     /// The index of the last processed batch
     pub batch_index: u64,
     pub bump: u8,
-    pub _padding: [u8; 7],
+    pub is_initialized: u8,
+    pub _padding: [u8; 6],
 }
 
 impl StateDefinition for Config {
     const LEN: usize = core::mem::size_of::<Config>();
-    const SEED: &'static str = "config";
 }
 
 impl Initialized for Config {
     fn is_initialized(&self) -> bool {
-        self.sequencer_authority != Pubkey::default()
+        self.is_initialized == 1
     }
 }
 
 impl Config {
-    pub fn new(&mut self, sequencer_authority: Pubkey, domain: [u8; 32], bump: u8) {
+    pub fn new(&mut self, sequencer_authority: Pubkey, domain: [u8; 32], bump: u8) -> Result<(), ProgramError>{
+        if sequencer_authority == Pubkey::default() {
+        return Err(ProgramError::InvalidArgument);
+        }
+        if domain == [0u8; 32] {
+            return Err(ProgramError::InvalidArgument);
+        }
+
         self.sequencer_authority = sequencer_authority;
         self.domain = domain;
         self.state_root = [0u8; 32];
         self.batch_index = 0;
         self.bump = bump;
-        self._padding = [0; 7];
+        self.is_initialized = 1;
+        self._padding = [0; 6];
+
+        Ok(())
     }
 }

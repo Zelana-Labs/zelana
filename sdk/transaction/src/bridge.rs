@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use wincode_derive::{SchemaRead, SchemaWrite};
+use wincode::{SchemaRead, SchemaWrite};
 use zelana_account::AccountId;
 
 /// Event coming from the L1 Listener.

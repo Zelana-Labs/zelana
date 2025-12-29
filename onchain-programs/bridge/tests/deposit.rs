@@ -1,7 +1,8 @@
 mod common;
-use bridge_z::{helpers::StateDefinition, instruction::{BridgeIx, DepositParams}, state::DepositReceipt, ID};
+use bridge_z::{ID, helpers::{Initialized, StateDefinition, derive_deposit_receipt_pda}, instruction::{BridgeIx, DepositParams}, state::DepositReceipt};
 use common::TestFixture;
-use solana_sdk::{instruction::{AccountMeta, Instruction}, pubkey::Pubkey, signer::Signer, system_program};
+use pinocchio::pubkey::find_program_address;
+use solana_sdk::{instruction::{AccountMeta, Instruction}, pubkey::Pubkey, signature::Keypair, signer::Signer, system_program};
 
 #[test]
 fn text_deposit_success(){
@@ -17,16 +18,16 @@ fn text_deposit_success(){
     let depositor_balance_before = fixture.svm.get_balance(&depositor_pubkey).unwrap();
     
     let pubkey = Pubkey::from(ID);
-    let nonce_le = nonce.to_le_bytes();
-    let (receipt_pda,_) = Pubkey::find_program_address(
+    
+    let (receipt_pda, _) = Pubkey::find_program_address(
         &[
-            DepositReceipt::SEED.as_bytes(),
-            fixture.config_pda.as_ref(),
+            b"receipt",
+            fixture.domain.as_ref(),
             depositor_pubkey.as_ref(),
-            &nonce_le
+            &nonce.to_le_bytes(),
         ],
-        &pubkey
-        );
+        &fixture.program_id,
+    );
 
     let ix_data = DepositParams{
             amount:deposit_amount,
@@ -40,7 +41,7 @@ fn text_deposit_success(){
     AccountMeta::new(depositor_pubkey, true),
     AccountMeta::new_readonly(fixture.config_pda, false),
     AccountMeta::new(fixture.vault_pda, false),
-    AccountMeta::new(receipt_pda, false),
+    AccountMeta::new(receipt_pda.into(), false),
     AccountMeta::new_readonly(system_program::ID, false),
     ];
 
@@ -62,13 +63,14 @@ fn text_deposit_success(){
     let depositor_balance_after = fixture.svm.get_balance(&depositor_pubkey).unwrap();
     assert!(depositor_balance_after < depositor_balance_before);
     
-    let receipt_account = fixture.svm.get_account(&receipt_pda).expect("Deposit receipt account not found");
+    let receipt_account = fixture.svm.get_account(&receipt_pda.into()).expect("Deposit receipt account not found");
     assert_eq!(receipt_account.owner, pubkey);
     assert_eq!(receipt_account.data.len(), DepositReceipt::LEN);    
     let receipt_state: &DepositReceipt = bytemuck::from_bytes(&receipt_account.data);
     assert_eq!(receipt_state.depositor, *depositor_pubkey.as_array());
     assert_eq!(receipt_state.amount, deposit_amount);
     assert_eq!(receipt_state.nonce, nonce);
+    assert!(receipt_state.is_initialized());
     assert_ne!(receipt_state.bump, 0);
 }
 
@@ -82,16 +84,14 @@ fn test_deposit_replay_fails() {
     let deposit_amount = 500_000_000; // 0.5 SOL
     let nonce = 999u64; // The nonce we will reuse.
 
-    let pubkey = Pubkey::from(ID);
-    let nonce_le = nonce.to_le_bytes();
     let (receipt_pda, _) = Pubkey::find_program_address(
         &[
-            DepositReceipt::SEED.as_bytes(),
-            fixture.config_pda.as_ref(),
+            b"receipt",
+            fixture.domain.as_ref(),
             depositor.pubkey().as_ref(),
-            &nonce_le,
+            &nonce.to_le_bytes(),
         ],
-        &pubkey,
+        &fixture.program_id,
     );
 
     let ix_data = DepositParams { amount: deposit_amount, nonce };
@@ -102,19 +102,25 @@ fn test_deposit_replay_fails() {
         AccountMeta::new(depositor.pubkey(), true),
         AccountMeta::new_readonly(fixture.config_pda, false),
         AccountMeta::new(fixture.vault_pda, false),
-        AccountMeta::new(receipt_pda, false),
+        AccountMeta::new(receipt_pda.into(), false),
         AccountMeta::new_readonly(system_program::ID, false),
     ];
-    let deposit_ix = Instruction { program_id: pubkey, accounts, data: instruction_data };
+    let deposit_ix = Instruction { program_id: fixture.program_id, accounts, data: instruction_data };
 
     let first_result = fixture.build_and_send_transaction(&[], vec![deposit_ix.clone()]);
     assert!(first_result.is_ok(), "First deposit should have succeeded");
 
     let second_result = fixture.build_and_send_transaction(&[], vec![deposit_ix]);
 
-    assert!(second_result.is_err(), "Second deposit (replay) should have failed");
+    assert!(second_result.is_err(), "deposit replay should fail");
 
-    let _tx_error = second_result.unwrap_err().err;
-    // assert_eq!(tx_error, ProgramError::AccountAlreadyInitialized);
+     // Receipt must still exist and be initialized only once
+    let receipt_account = fixture
+        .svm
+        .get_account(&receipt_pda.into())
+        .expect("Receipt account missing");
+
+    let receipt_state: &DepositReceipt = bytemuck::from_bytes(&receipt_account.data);
+    assert!(receipt_state.is_initialized());
 }
 
