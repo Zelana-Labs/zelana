@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use wincode_derive::{SchemaRead, SchemaWrite};
+use wincode::{SchemaRead, SchemaWrite};
 use zelana_account::AccountId;
 use zelana_pubkey::Pubkey;
 use zelana_signature::Signature;
@@ -8,8 +8,11 @@ pub mod bridge;
 pub use bridge::{DepositEvent, DepositParams, WithdrawRequest};
 
 /// The enum for all inputs to the L2 State Machine.
-#[derive(Debug, Clone, Serialize, Deserialize, SchemaRead, SchemaWrite)]
+#[derive(Debug, Clone, SchemaRead, SchemaWrite,Serialize,Deserialize)]
 pub enum TransactionType {
+    /// PRIVACY: An opaque shielded transaction (The Blob).
+    /// Sender/Receiver are hidden. Validity is proven via ZK.
+    Shielded(PrivateTransaction),
     /// A standard transfer or interaction submitted by a user via UDP.
     Transfer(SignedTransaction),
 
@@ -20,13 +23,29 @@ pub enum TransactionType {
     Withdraw(WithdrawRequest),
 }
 
-/// A single transaction
-#[derive(Clone, Debug, Serialize, Deserialize)]
+/// The Opaque Blob for Privacy
+#[derive(Debug, Clone, Serialize, Deserialize, SchemaRead, SchemaWrite)]
+pub struct PrivateTransaction {
+    /// The ZK Proof (Groth16 bytes) attesting validity.
+    pub proof: Vec<u8>,
+    /// The unique tag preventing double-spends.
+    pub nullifier: [u8; 32],
+    /// The new note created (Encrypted Hash).
+    pub commitment: [u8; 32],
+    /// The encrypted data for the recipient to decrypt.
+    pub ciphertext: Vec<u8>,
+    /// Optional: Ephemeral public key for ECDH shared secret derivation.
+    pub ephemeral_key: [u8; 32],
+}
+/// The Wrapper Structure
+#[derive(Clone, Debug, SchemaWrite, SchemaRead,Serialize,Deserialize)]
 pub struct Transaction {
-    pub sender: Pubkey,
-    pub recipient: Pubkey,
+    /// For Shielded txs, this might be all zeros or a "Relayer" key.
+    pub sender: Pubkey, 
     pub tx_type: TransactionType,
-    pub signature: Signature,
+    /// Signature is used for Transparent txs. 
+    /// For Shielded, the authentication is inside the ZK Proof.
+    pub signature: Signature, 
 }
 
 /// The payload a user signs.

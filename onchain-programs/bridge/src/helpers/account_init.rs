@@ -14,28 +14,25 @@ pub trait HasOwner {
 
 pub trait StateDefinition {
     const LEN: usize;
-    const SEED: &'static str;
 }
 
 
 #[inline(always)]
-pub fn create_pda_account<S>(
+pub fn create_pda_account(
     payer: &AccountInfo,
     account: &AccountInfo,
     signer_seeds: &[Seed],
     rent: &Rent,
 ) -> Result<(), ProgramError>
-where
-    S: StateDefinition,
 {
     let signers = [Signer::from(signer_seeds)];
 
     CreateAccount {
         from: payer,
         to: account,
-        space: S::LEN as u64,
+        space: account.data_len() as u64,
         owner: &crate::ID,
-        lamports: rent.minimum_balance(S::LEN),
+        lamports: rent.minimum_balance(account.data_len() ),
     }
     .invoke_signed(&signers)?;
 

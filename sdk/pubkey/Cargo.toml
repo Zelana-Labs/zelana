@@ -9,3 +9,4 @@ serde = { workspace = true }
 sha2 = { workspace = true }
 zelana-account = { workspace = true }
 bs58 = "0.5"
+wincode = { workspace = true , features = ["derive"] }

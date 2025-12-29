@@ -4,14 +4,11 @@ use bytemuck::{Pod, Zeroable};
 #[derive(Pod, Zeroable, Debug, Clone, Copy, PartialEq, shank::ShankAccount)]
 #[repr(C)]
 pub struct Vault {
+    pub domain: [u8; 32],
     pub bump: u8,
     pub _padding: [u8; 7],
 }
 
-impl StateDefinition for Vault {
-    const LEN: usize = core::mem::size_of::<Vault>();
-    const SEED: &'static str = "vault";
-}
 impl Initialized for Vault {
     /// An account is initialized if its bump seed is non-zero.
     /// The PDA derivation guarantees a non-zero bump on successful creation.
@@ -20,9 +17,15 @@ impl Initialized for Vault {
     }
 }
 
+impl StateDefinition for Vault{
+    const LEN: usize = core::mem::size_of::<Vault>();
+}
+
+
 impl Vault {
-    /// Initializes a new Vault state.
-    pub fn new(&mut self, bump: u8) {
+
+    pub fn new(&mut self, domain: [u8; 32], bump: u8) {
+        self.domain = domain;
         self.bump = bump;
         self._padding = [0; 7];
     }

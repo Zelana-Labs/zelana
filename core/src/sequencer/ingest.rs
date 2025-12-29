@@ -4,16 +4,70 @@ use solana_client::nonblocking::pubsub_client::PubsubClient;
 use solana_client::rpc_config::{RpcTransactionLogsConfig, RpcTransactionLogsFilter};
 use solana_commitment_config::CommitmentConfig;
 use solana_sdk::pubkey::Pubkey;
+use tokio::net::TcpListener;
+use std::net::SocketAddr;
 use std::str::FromStr;
 use tokio_stream::StreamExt;
 use zelana_account::AccountId;
-use zelana_transaction::DepositEvent;
+use zelana_transaction::{DepositEvent,Transaction, TransactionType};
 
 use super::db::RocksDbStore;
 use crate::storage::StateStore;
 
+use axum::{
+    extract::{Json, State},
+    http::StatusCode,
+    routing::post,
+    Router,
+};
+use tower_http::cors::CorsLayer;
+
+// shared state
+#[derive(Clone)]
+struct AppState{
+    db : RocksDbStore
+}
+
+// ingest server ( recieves user TX)
+pub async fn state_ingest_server(db:RocksDbStore,port: u16){
+    let state  = AppState { db};
+
+    let app = Router::new()
+        .route("/submit_tx", post(handle_submit_tx))
+        .layer(CorsLayer::permissive()) // allow from wallet or webpage
+        .with_state(state);
+
+    let listener = TcpListener::bind(SocketAddr::from(([0, 0, 0, 0], port))).await.unwrap();
+
+    axum::serve(listener, app).await.unwrap();
+}
+
+async fn handle_submit_tx(
+    State(state) : State<AppState>,
+    Json(tx) : Json<Transaction>
+)->StatusCode{
+
+
+    // Check Double Spend for SHIELDED txs
+    if let TransactionType::Shielded(ref blob) = tx.tx_type {
+        if state.db.nullifier_exists(&blob.nullifier) {
+            warn!("Double spend detected!");
+            return StatusCode::BAD_REQUEST;
+        }
+    }
+    //Persist to Mempool (RocksDB)
+    if let Err(e) = state.db.add_transaction(tx) {
+        error!("Failed to persist transaction: {}", e);
+        return StatusCode::INTERNAL_SERVER_ERROR;
+    }   
+
+
+    info!("Tx Accepted into Mempool");
+    StatusCode::ACCEPTED
+}
+
 pub async fn start_indexer(db: RocksDbStore, ws_url: String, bridge_program_id: String) {
-    info!("🔭 Indexer started. Watching: {}", bridge_program_id);
+    info!(" Indexer started. Watching: {}", bridge_program_id);
 
     let pubsub = match PubsubClient::new(&ws_url).await {
         Ok(client) => client,

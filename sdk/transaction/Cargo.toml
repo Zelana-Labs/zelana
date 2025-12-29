@@ -10,5 +10,4 @@ thiserror = { workspace = true }
 zelana-account = { workspace = true }
 zelana-pubkey = { workspace = true }
 zelana-signature = { workspace = true }
-wincode = { workspace = true }
-wincode-derive = { workspace = true }
+wincode = { workspace = true , features = ["derive"] }
