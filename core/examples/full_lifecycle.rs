@@ -15,27 +15,27 @@ use zelana_account::AccountId;
 use zelana_transaction::{DepositParams, SignedTransaction, TransactionData};
 use zephyr::client::ZelanaClient;
 
+const DOMAIN: &[u8] = b"solana";
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     env_logger::init();
 
-    // --- CONFIG ---
     let rpc_url = "http://127.0.0.1:8899";
     let bridge_id_str = env::var("BRIDGE_PROGRAM_ID")
-        .unwrap_or_else(|_| "DouWDzYTAxi5c3ui695xqozJuP9SpAutDcTbyQnkAguo".to_string());
+        .unwrap_or_else(|_| "9HXapBN9otLGnQNGv1HRk91DGqMNvMAvQqohL7gPW1sd".to_string());
     let program_id = Pubkey::from_str(&bridge_id_str)?;
     let sequencer_url = "127.0.0.1:9000";
 
-    // 1. Setup Identity (We use one key for L1 and L2)
+    // 1. Setup Identity
     let user = Keypair::new();
     println!("👤 User Identity: {}", user.pubkey());
 
-    // We map the L1 Pubkey directly to L2 Account ID (matching the Ingest logic)
     let mut acc_bytes = [0u8; 32];
     acc_bytes.copy_from_slice(user.pubkey().as_ref());
     let my_l2_id = AccountId(acc_bytes);
 
-    // 2. Fund L1 Account (Airdrop)
+    // 2. Fund L1 Account
     println!("💸 Airdropping L1 SOL...");
     let rpc = RpcClient::new_with_commitment(rpc_url.to_string(), CommitmentConfig::confirmed());
     let sig = rpc.request_airdrop(&user.pubkey(), 2_000_000_000)?;
@@ -43,36 +43,36 @@ async fn main() -> anyhow::Result<()> {
         sleep(Duration::from_millis(100)).await;
     }
 
-    // 3. DEPOSIT to L2 (1 SOL)
+    // 3. DEPOSIT to L2
     println!("🚀 Depositing 1 SOL to Bridge...");
-    let (config_pda, _) = Pubkey::find_program_address(&[b"config"], &program_id);
-    let (vault_pda, _) =
-        Pubkey::find_program_address(&[b"vault", config_pda.as_ref()], &program_id);
+    
+    // Derive PDAs - matching working example exactly
+    let mut domain_padded = [0u8; 32];
+    domain_padded[..DOMAIN.len()].copy_from_slice(DOMAIN);
+    
+    let (config_pda, _) = Pubkey::find_program_address(&[b"config", &domain_padded], &program_id);
+    let (vault_pda, _) = Pubkey::find_program_address(&[b"vault", &domain_padded], &program_id);
 
-    let nonce: u64 = 500; // Unique nonce
-    let nonce_le = nonce.to_le_bytes();
+    let nonce: u64 = 500;
     let (receipt_pda, _) = Pubkey::find_program_address(
-        &[
-            b"receipt",
-            config_pda.as_ref(),
-            user.pubkey().as_ref(),
-            &nonce_le,
-        ],
+        &[b"receipt", &domain_padded, user.pubkey().as_ref(), &nonce.to_le_bytes()],
         &program_id,
     );
 
     let amount = 1_000_000_000;
     let params = DepositParams { amount, nonce };
-    let mut data = vec![1]; // Deposit Discriminator
+    
+    // Use wincode serialization like the working example
+    let mut data = vec![1];
     data.extend(wincode::serialize(&params)?);
 
     let system_id = Pubkey::from_str("11111111111111111111111111111111")?;
 
-    let ix = Instruction {
+    let deposit_ix = Instruction {
         program_id,
         accounts: vec![
             AccountMeta::new(user.pubkey(), true),
-            AccountMeta::new(config_pda, false),
+            AccountMeta::new_readonly(config_pda, false),
             AccountMeta::new(vault_pda, false),
             AccountMeta::new(receipt_pda, false),
             AccountMeta::new_readonly(system_id, false),
@@ -81,13 +81,14 @@ async fn main() -> anyhow::Result<()> {
     };
 
     let tx = Transaction::new_signed_with_payer(
-        &[ix],
+        &[deposit_ix],
         Some(&user.pubkey()),
         &[&user],
         rpc.get_latest_blockhash()?,
     );
-    rpc.send_and_confirm_transaction(&tx)?;
-    println!("✅ Deposit Confirmed on L1.");
+
+    let sig = rpc.send_and_confirm_transaction(&tx)?;
+    println!("✅ Deposit Confirmed on L1. Sig: {}", sig);
 
     // 4. Wait for Indexer
     println!("⏳ Waiting 5s for Sequencer to index...");
@@ -97,19 +98,17 @@ async fn main() -> anyhow::Result<()> {
     println!("🔌 Connecting to Zelana L2...");
     let mut client = ZelanaClient::connect(sequencer_url).await?;
 
-    // 6. Send L2 Transfer (Spending the deposited funds!)
+    // 6. Send L2 Transfer
     println!("💸 Sending L2 Transfer...");
 
-    // Manually construct SignedTransaction to match the L1 Key
     let tx_data = TransactionData {
         from: my_l2_id,
-        to: my_l2_id, // Self-transfer
+        to: my_l2_id,
         amount: 50,
         nonce: 0,
         chain_id: 1,
     };
 
-    // Sign with the L1 Key (Ed25519)
     let msg = wincode::serialize(&tx_data)?;
     let signing_key = SigningKey::from_bytes(&user.secret_bytes()[0..32].try_into().unwrap());
     let signature = signing_key.sign(&msg).to_bytes().to_vec();

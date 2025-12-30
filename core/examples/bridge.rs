@@ -8,83 +8,100 @@ use solana_sdk::{
 };
 use std::env;
 use std::str::FromStr;
-use zelana_transaction::DepositParams;
+use zelana_transaction::{DepositParams, InitParams};
+
+const DOMAIN: &[u8] = b"solana";
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    // 1. Config: localnet requires manual bridge deployment
     let rpc_url = "http://127.0.0.1:8899";
-    // We default to the ID you likely deployed. Change if different!
     let bridge_id_str = env::var("BRIDGE_PROGRAM_ID")
-        .unwrap_or_else(|_| "DouWDzYTAxi5c3ui695xqozJuP9SpAutDcTbyQnkAguo".to_string());
+        .unwrap_or_else(|_| "9HXapBN9otLGnQNGv1HRk91DGqMNvMAvQqohL7gPW1sd".to_string());
     let program_id = Pubkey::from_str(&bridge_id_str)?;
 
-    // 2. Setup User (The Depositor)
     let payer = Keypair::new();
-    println!("depositor: {:?}", payer.pubkey());
+    let sequencer = Keypair::new();
+    
     let rpc = RpcClient::new_with_commitment(rpc_url.to_string(), CommitmentConfig::confirmed());
 
-    println!("Airdropping SOL to  {}...", payer.pubkey());
-    let sig = rpc.request_airdrop(&payer.pubkey(), 2_000_000_000)?; // 2 SOL
+    // Airdrop
+    let sig = rpc.request_airdrop(&payer.pubkey(), 2_000_000_000)?;
     while !rpc.confirm_transaction(&sig)? {
         std::thread::sleep(std::time::Duration::from_millis(100));
     }
 
-    // 3. Derive Bridge PDAs
-    let (config_pda, _) = Pubkey::find_program_address(&[b"config"], &program_id);
-    let (vault_pda, _) =
-        Pubkey::find_program_address(&[b"vault", config_pda.as_ref()], &program_id);
+    // Derive PDAs
+    let mut domain_padded = [0u8; 32];
+    domain_padded[..DOMAIN.len()].copy_from_slice(DOMAIN);
+    
+    let (config_pda, _) = Pubkey::find_program_address(&[b"config", &domain_padded], &program_id);
+    let (vault_pda, _) = Pubkey::find_program_address(&[b"vault", &domain_padded], &program_id);
+    let system_id = Pubkey::from_str("11111111111111111111111111111111")?;
 
-    // Receipt PDA (Unique per deposit)
-    let nonce: u64 = 101; // Arbitrary nonce for this test
-    let nonce_le = nonce.to_le_bytes();
+    // Initialize bridge if needed
+    if rpc.get_account(&config_pda).is_err() {
+        let init_params = InitParams {
+            sequencer_authority: sequencer.pubkey().to_bytes(),
+            domain: domain_padded,
+        };
+
+        let mut init_data = vec![0];
+        init_data.extend(wincode::serialize(&init_params)?);
+
+        let init_ix = Instruction {
+            program_id,
+            accounts: vec![
+                AccountMeta::new(payer.pubkey(), true),
+                AccountMeta::new(config_pda, false),
+                AccountMeta::new(vault_pda, false),
+                AccountMeta::new_readonly(system_id, false),
+            ],
+            data: init_data,
+        };
+
+        let tx = Transaction::new_signed_with_payer(
+            &[init_ix],
+            Some(&payer.pubkey()),
+            &[&payer],
+            rpc.get_latest_blockhash()?,
+        );
+
+        rpc.send_and_confirm_transaction(&tx)?;
+        println!("✅ Bridge Initialized");
+    }
+
+    // Deposit
+    let nonce: u64 = 101;
     let (receipt_pda, _) = Pubkey::find_program_address(
-        &[
-            b"receipt",
-            config_pda.as_ref(),
-            payer.pubkey().as_ref(),
-            &nonce_le,
-        ],
+        &[b"receipt", &domain_padded, payer.pubkey().as_ref(), &nonce.to_le_bytes()],
         &program_id,
     );
 
-    // 4. Construct Instruction
-    let amount = 1_000_000_000; // 1 SOL (1e9 lamports)
-    let params = DepositParams { amount, nonce };
+    let params = DepositParams { amount: 1_000_000_000, nonce };
+    let mut deposit_data = vec![1];
+    deposit_data.extend(wincode::serialize(&params)?);
 
-    // Discriminator: Assuming 'Deposit' is the 2nd instruction (index 1).
-    // If you used the order: [Init, Deposit, Withdraw...], then it is 1.
-    // If you used [Init, Withdraw, Deposit...], check your enum!
-    let mut data = vec![1];
-    data.extend(wincode::serialize(&params)?);
-
-    let system_id = Pubkey::from_str("11111111111111111111111111111111")?;
-    let accounts = vec![
-        AccountMeta::new(payer.pubkey(), true),
-        AccountMeta::new(config_pda, false),
-        AccountMeta::new(vault_pda, false),
-        AccountMeta::new(receipt_pda, false),
-        AccountMeta::new_readonly(system_id, false),
-    ];
-
-    let ix = Instruction {
+    let deposit_ix = Instruction {
         program_id,
-        accounts,
-        data,
+        accounts: vec![
+            AccountMeta::new(payer.pubkey(), true),
+            AccountMeta::new_readonly(config_pda, false),
+            AccountMeta::new(vault_pda, false),
+            AccountMeta::new(receipt_pda, false),
+            AccountMeta::new_readonly(system_id, false),
+        ],
+        data: deposit_data,
     };
 
-    // 5. Send
-    let latest_blockhash = rpc.get_latest_blockhash()?;
     let tx = Transaction::new_signed_with_payer(
-        &[ix],
+        &[deposit_ix],
         Some(&payer.pubkey()),
         &[&payer],
-        latest_blockhash,
+        rpc.get_latest_blockhash()?,
     );
 
-    println!("Sending Deposit of 1 SOL...");
     let sig = rpc.send_and_confirm_transaction(&tx)?;
-    println!("Deposit Confirmed! Sig: {}", sig);
+    println!("✅ Deposit Confirmed! Sig: {}", sig);
 
     Ok(())
 }
