@@ -33,3 +33,10 @@ impl fmt::Debug for AccountId {
         write!(f, "AccountId({})", self.to_hex())
     }
 }
+
+impl fmt::Display for AccountId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // Example: if AccountId wraps [u8; 32]
+        write!(f, "{}", hex::encode(&self.0))
+    }
+}

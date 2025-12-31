@@ -5,7 +5,7 @@ use zelana_pubkey::Pubkey;
 use zelana_signature::Signature;
 
 pub mod bridge;
-pub use bridge::{DepositEvent, DepositParams, WithdrawRequest};
+pub use bridge::{DepositEvent, DepositParams, WithdrawRequest, InitParams};
 
 /// The enum for all inputs to the L2 State Machine.
 #[derive(Debug, Clone, SchemaRead, SchemaWrite,Serialize,Deserialize)]
