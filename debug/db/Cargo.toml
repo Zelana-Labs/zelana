@@ -13,3 +13,5 @@ hex = {workspace = true}
 chrono = {version = "0.4", features = ["clock"]}
 zelana-account ={ workspace = true}
 crossterm = "0.29"
+zelana-transaction ={ workspace = true}
+ratatui = "0.30"
