@@ -2,6 +2,7 @@ use bs58;
 use chacha20poly1305::aead::OsRng;
 use chacha20poly1305::aead::rand_core::RngCore;
 use ed25519_dalek::{Signer, SigningKey};
+use solana_sdk::signature::Keypair as SolanaKeypair;
 use x25519_dalek::{PublicKey as X25519PublicKey, StaticSecret};
 use zelana_account::AccountId;
 use zelana_pubkey::PublicKeys;
@@ -31,6 +32,13 @@ impl Keypair {
         }
     }
 
+    pub fn solana_keypair(&self) -> SolanaKeypair {
+        // SolanaKeypair::new_from_array expects just the 32-byte private key
+        // It will automatically derive the public key
+        let private_key_bytes = self.signing_key.to_bytes();
+        SolanaKeypair::new_from_array(private_key_bytes)
+    }
+
     /// Reconstructs a wallet from raw seed bytes (e.g., from a mnemonic).
     /// seed must be 64 bytes: 32 for signer + 32 for privacy.
     pub fn from_seed(seed: &[u8; 64]) -> Self {
@@ -44,10 +52,11 @@ impl Keypair {
     }
 
     /// Returns the public Account ID (The "Address").
+    /// IMPORTANT: This must match the bridge's map_l1_to_l2 function!
     pub fn account_id(&self) -> AccountId {
-        self.public_keys().derive_id()
+        // Use ONLY the signing key to match L1 compatibility
+        AccountId(self.signing_key.verifying_key().to_bytes())
     }
-
     /// Returns the public key set (safe to share).
     pub fn public_keys(&self) -> PublicKeys {
         PublicKeys {
