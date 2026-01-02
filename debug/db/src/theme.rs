@@ -1,11 +1,14 @@
 use ratatui::style::Color;
 
-// Professional clean color scheme
-pub const COLOR_BG: Color = Color::Black;
-pub const COLOR_PRIMARY: Color = Color::Rgb(100, 149, 237);      // Cornflower blue - professional
-pub const COLOR_SUCCESS: Color = Color::Rgb(72, 199, 142);       // Soft green
-pub const COLOR_INFO: Color = Color::Rgb(94, 129, 172);          // Muted blue
-pub const COLOR_WARNING: Color = Color::Rgb(230, 179, 92);       // Soft amber
-pub const COLOR_ACCENT: Color = Color::Rgb(138, 123, 189);       // Soft purple
-pub const COLOR_BORDER: Color = Color::Rgb(80, 80, 90);          // Subtle gray
-pub const COLOR_TEXT: Color = Color::Rgb(200, 200, 210);         // Soft white
+// Matte black + deep crimson professional scheme
+pub const COLOR_BG: Color = Color::Rgb(15, 17, 19);        // Charcoal matte black
+pub const COLOR_BORDER: Color = Color::Rgb(36, 38, 42);   // Low-contrast border
+
+pub const COLOR_PRIMARY: Color = Color::Rgb(160, 55, 55); // Deep muted crimson
+pub const COLOR_ACCENT: Color = Color::Rgb(185, 75, 75);  // Slightly warmer highlight
+
+pub const COLOR_INFO: Color = Color::Rgb(95, 140, 200);   // Muted steel blue
+pub const COLOR_SUCCESS: Color = Color::Rgb(85, 190, 155); // Calm teal-green
+pub const COLOR_WARNING: Color = Color::Rgb(220, 175, 95); // Soft amber
+
+pub const COLOR_TEXT: Color = Color::Rgb(205, 210, 220);  // Soft light gray
