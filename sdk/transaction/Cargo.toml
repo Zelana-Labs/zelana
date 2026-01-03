@@ -11,3 +11,4 @@ zelana-account = { workspace = true }
 zelana-pubkey = { workspace = true }
 zelana-signature = { workspace = true }
 wincode = { workspace = true , features = ["derive"] }
+rocksdb = {workspace = true}

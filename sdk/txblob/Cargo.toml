@@ -1,0 +1,17 @@
+[package]
+name = "txblob"
+version.workspace = true
+repository.workspace = true
+homepage.workspace = true
+license.workspace = true
+edition.workspace = true
+
+[dependencies]
+serde = { workspace = true }
+wincode = { workspace = true , features = ["derive"] }
+chacha20poly1305 = { workspace = true }
+x25519-dalek = { workspace = true ,features = ["static_secrets"] }
+sha2 = { workspace = true }
+rand_core = { workspace = true }
+zelana-transaction = { workspace = true }
+hkdf = "0.12.4"

@@ -8,5 +8,4 @@ edition = { workspace = true }
 hex = { workspace = true }
 serde = { workspace = true }
 thiserror = { workspace = true }
-wincode = { workspace = true }
-wincode-derive = { workspace = true }
+wincode = { workspace = true , features = ["derive"]}

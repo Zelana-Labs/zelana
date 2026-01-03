@@ -3,7 +3,7 @@ use wincode::{SchemaRead, SchemaWrite};
 use zelana_account::AccountId;
 use zelana_pubkey::Pubkey;
 use zelana_signature::Signature;
-
+use rocksdb::{ColumnFamily, WriteBatch};
 pub mod bridge;
 pub use bridge::{DepositEvent, DepositParams, WithdrawRequest, InitParams};
 
@@ -49,7 +49,7 @@ pub struct Transaction {
 }
 
 /// The payload a user signs.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, SchemaRead, SchemaWrite)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, SchemaRead, SchemaWrite,Default)]
 pub struct TransactionData {
     pub from: AccountId,
     pub to: AccountId,
@@ -67,4 +67,21 @@ pub struct SignedTransaction {
     pub signature: Vec<u8>,
     /// The raw public key of the signer.
     pub signer_pubkey: [u8; 32],
+}
+
+impl TransactionType{
+    pub fn apply_storage_effects(
+        &self,
+        batch: &mut WriteBatch,
+        cf_nullifiers: &ColumnFamily
+    ){
+        match self{
+            TransactionType::Shielded(blob)=>{
+
+
+                batch.put_cf(cf_nullifiers, &blob.nullifier, b"1");
+            }
+            _ => {}
+        }
+    }
 }

@@ -7,11 +7,15 @@ use solana_sdk::pubkey::Pubkey;
 use tokio::net::TcpListener;
 use std::net::SocketAddr;
 use std::str::FromStr;
+use std::sync::{Arc};
+use tokio::sync::Mutex;
 use tokio_stream::StreamExt;
 use zelana_account::AccountId;
-use zelana_transaction::{DepositEvent,Transaction, TransactionType};
-
+use zelana_transaction::{DepositEvent};
+use super::executor::Executor;
 use super::db::RocksDbStore;
+use crate::sequencer::executor::StateDiff;
+use crate::sequencer::session::Session;
 use crate::storage::StateStore;
 
 use axum::{
@@ -22,15 +26,51 @@ use axum::{
 };
 use tower_http::cors::CorsLayer;
 
+use txblob::{
+    EncryptedTxBlobV1,
+    decrypt_signed_tx,
+    tx_blob_hash,
+};
+
+use x25519_dalek::{StaticSecret, PublicKey};
+
+
 // shared state
 #[derive(Clone)]
-struct AppState{
-    db : RocksDbStore
+struct AppState {
+    db: Arc<RocksDbStore>,
+    executor: Arc<Mutex<Executor>>,
+    sequencer_secret: Arc<StaticSecret>,
+    session: Arc<Mutex<Session>>
+}
+
+#[derive(serde::Deserialize)]
+pub struct SubmitBlobRequest {
+    /// Serialized EncryptedTxBlobV1 (wincode)
+    pub blob: Vec<u8>,
+    /// Client X25519 public key
+    pub client_pubkey: [u8; 32],
 }
 
 // ingest server ( recieves user TX)
-pub async fn state_ingest_server(db:RocksDbStore,port: u16){
-    let state  = AppState { db};
+pub async fn state_ingest_server(
+    db: RocksDbStore,
+    sequencer_secret: StaticSecret,
+    port: u16,
+) {
+    let db = Arc::new(db);
+
+    let executor = Arc::new(Mutex::new(
+    Executor::new(db.clone())
+    ));
+
+    let session = Arc::new(Mutex::new(Session::new(0)));
+    let state = AppState {
+        db,
+        sequencer_secret: Arc::new(sequencer_secret),
+        executor,
+        session
+    };
 
     let app = Router::new()
         .route("/submit_tx", post(handle_submit_tx))
@@ -38,35 +78,133 @@ pub async fn state_ingest_server(db:RocksDbStore,port: u16){
         .with_state(state);
 
     let listener = TcpListener::bind(SocketAddr::from(([0, 0, 0, 0], port))).await.unwrap();
-
+    info!("Ingest server listening on {}", port);
     axum::serve(listener, app).await.unwrap();
 }
 
+//Handle Encrypted TX submission
 async fn handle_submit_tx(
-    State(state) : State<AppState>,
-    Json(tx) : Json<Transaction>
-)->StatusCode{
-
-
-    // Check Double Spend for SHIELDED txs
-    if let TransactionType::Shielded(ref blob) = tx.tx_type {
-        if state.db.nullifier_exists(&blob.nullifier) {
-            warn!("Double spend detected!");
+    State(state): State<AppState>,
+    Json(req): Json<SubmitBlobRequest>,
+) -> StatusCode {
+    let blob: EncryptedTxBlobV1 = match wincode::deserialize(&req.blob) {
+        Ok(b) => b,
+        Err(_) => {
+            warn!("Invalid tx blob serialization");
             return StatusCode::BAD_REQUEST;
         }
+    };
+    //Hash (canonical tx ID)
+    let tx_hash = tx_blob_hash(&blob);
+
+    //Decrypt in memory ONLY
+    let client_pub = PublicKey::from(req.client_pubkey);
+    let signed_tx = match decrypt_signed_tx(
+        &blob,
+        &state.sequencer_secret,
+        &client_pub,
+    ) {
+        Ok(tx) => tx,
+        Err(_) => {
+            warn!("Tx decryption failed");
+            return StatusCode::BAD_REQUEST;
+        }
+    };
+
+    let mut executor = state.executor.lock().await;
+
+    let exec_result = match executor.execute_signed_tx(
+    signed_tx,
+    tx_hash,
+    ) {
+        Ok(r) => r,
+        Err(e) => {
+            warn!("Execution failed: {:?}", e);
+            return StatusCode::BAD_REQUEST;
+        }
+    };
+
+    {
+        let mut session = state.session.lock().await;
+        session.push_execution(exec_result);
     }
-    //Persist to Mempool (RocksDB)
-    if let Err(e) = state.db.add_transaction(tx) {
-        error!("Failed to persist transaction: {}", e);
+    // (MVP) Optional nullifier checks would go here
+    // if blob.flags & FLAG_SHIELDED != 0 { ... }
+    if let Err(e) = state.db.add_encrypted_tx(tx_hash, req.blob) {
+        error!("Failed to persist encrypted tx: {}", e);
         return StatusCode::INTERNAL_SERVER_ERROR;
-    }   
+    }
 
+    {
+        let mut session = state.session.lock().await;
 
-    info!("Tx Accepted into Mempool");
+        if session.tx_count() >= 100 {
+            let prev_root = state
+                .db
+                .get_latest_state_root()
+                .unwrap_or([0u8; 32]);
+
+            let closed = session.clone().close(prev_root);
+
+            // Commit state (MVP: no prover gate yet)
+            if let Err(e) = executor.apply_state_diff(
+                StateDiff {
+        updates: closed.merged_state.clone(),
+    }
+            ) {
+                error!("Failed to apply state diff: {}", e);
+                return StatusCode::INTERNAL_SERVER_ERROR;
+            }
+
+            executor.reset();
+
+            if let Err(e) = state.db.store_block_header(closed.header) {
+                error!("Failed to store block header: {}", e);
+                return StatusCode::INTERNAL_SERVER_ERROR;
+            }
+
+            *session = Session::new(closed.header.batch_id + 1);
+
+            info!("Block {} committed", closed.header.batch_id);
+        }
+    }
+
+    info!("Encrypted tx accepted: {:?}", tx_hash);
     StatusCode::ACCEPTED
 }
 
-pub async fn start_indexer(db: RocksDbStore, ws_url: String, bridge_program_id: String) {
+// async fn handle_submit_tx(
+//     State(state) : State<AppState>,
+//     Json(tx) : Json<Transaction>
+// )->StatusCode{
+
+
+//     // Check Double Spend for SHIELDED txs
+//     if let TransactionType::Shielded(ref blob) = tx.tx_type {
+//         match state.db.nullifier_exists(&blob.nullifier) {
+//             Ok(true) => {
+//                 warn!("Double spend detected!");
+//                 return StatusCode::BAD_REQUEST;
+//             }
+//             Ok(false)=>{}
+//             Err(e)=>{
+//                 error!("Failed to check nullifier: {}",e);
+//                 return StatusCode::INTERNAL_SERVER_ERROR;
+//             }
+//         }
+//     }
+//     //Persist to Mempool (RocksDB)
+//     if let Err(e) = state.db.add_transaction(tx) {
+//         error!("Failed to persist transaction: {}", e);
+//         return StatusCode::INTERNAL_SERVER_ERROR;
+//     }   
+
+
+//     info!("Tx Accepted into Mempool");
+//     StatusCode::ACCEPTED
+// }
+
+pub async fn start_indexer(db: Arc<RocksDbStore>, ws_url: String, bridge_program_id: String) {
     info!(" Indexer started. Watching: {}", bridge_program_id);
 
     let pubsub = match PubsubClient::new(&ws_url).await {
@@ -132,16 +270,13 @@ fn parse_deposit_log(payload: &str) -> Option<DepositEvent> {
 }
 
 fn process_deposit(db: &RocksDbStore, event: DepositEvent) {
-    // 1. Load AccountState from "to" address (or create new)
-    let mut account_state = db.get_account_state(&event.to).unwrap_or_default();
+    let mut account_state =
+        db.get_account_state(&event.to).unwrap_or_default();
 
-    // 2. Credit Balance
-    account_state.balance = account_state.balance.saturating_add(event.amount);
+    account_state.balance =
+        account_state.balance.saturating_add(event.amount);
 
-    // 3. Save
-    // Note: In production, store the 'l1_seq' to prevent re-processing the same deposit!
-    // For MVP, direct addition is fine.
-    let mut db_mut = db.clone(); // Clone Arc for mutability trait
+    let mut db_mut = db.clone();
     if let Err(e) = db_mut.set_account_state(event.to, account_state) {
         error!("Failed to persist deposit: {}", e);
     } else {
