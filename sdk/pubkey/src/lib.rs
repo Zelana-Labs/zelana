@@ -1,9 +1,8 @@
-use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use wincode::{SchemaRead, SchemaWrite};
 use zelana_account::AccountId;
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, SchemaRead,SchemaWrite,Serialize,Deserialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, SchemaRead,SchemaWrite)]
 pub struct Pubkey(pub [u8; 32]);
 
 /// Helper struct to hold a user's full keypair set.

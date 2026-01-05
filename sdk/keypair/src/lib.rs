@@ -17,18 +17,11 @@ pub struct Keypair {
 
 impl Keypair {
     /// Generates a fresh random wallet.
-    pub fn new_random() -> Self {
+    pub fn generate() -> Self {
         let mut rng = OsRng;
-
-        // Ed25519 signing key (via raw bytes)
-        let mut seed = [0u8; 32];
-        rng.fill_bytes(&mut seed);
-        let signing_key = SigningKey::from_bytes(&seed);
-        let privacy_key = StaticSecret::random_from_rng(OsRng);
-
         Self {
-            signing_key,
-            privacy_key,
+            signing_key: SigningKey::generate(&mut rng),
+            privacy_key: StaticSecret::random_from_rng(&mut rng),
         }
     }
 
@@ -54,7 +47,6 @@ impl Keypair {
     /// Returns the public Account ID (The "Address").
     /// IMPORTANT: This must match the bridge's map_l1_to_l2 function!
     pub fn account_id(&self) -> AccountId {
-        // Use ONLY the signing key to match L1 compatibility
         AccountId(self.signing_key.verifying_key().to_bytes())
     }
     /// Returns the public key set (safe to share).
@@ -65,22 +57,26 @@ impl Keypair {
         }
     }
 
+    pub fn sign_message(&self, msg: &[u8]) -> [u8; 64] {
+        self.signing_key.sign(msg).to_bytes()
+    }
+
     /// Signs a transaction payload.
     /// This automatically attaches the signer's public key for the ZK Circuit.
     pub fn sign_transaction(&self, data: TransactionData) -> SignedTransaction {
         let msg = wincode::serialize(&data).expect("Serialization failed");
 
         // Sign the serialized bytes
-        let signature = self.signing_key.sign(&msg).to_bytes().to_vec();
+        let signature_bytes: [u8; 64] = self.signing_key.sign(&msg).to_bytes();
 
         SignedTransaction {
             data,
-            signature,
-            signer_pubkey: self.signing_key.verifying_key().to_bytes(),
+            signature: zelana_signature::Signature(signature_bytes),
+            signer_pubkey: zelana_pubkey::Pubkey(self.signing_key.verifying_key().to_bytes()),
         }
     }
 
-      /// Exports the keypair as a 64-byte seed (for saving to file).
+    /// Exports the keypair as a 64-byte seed (for saving to file).
     /// ⚠️ SENSITIVE: Only use this for encrypted storage!
     pub fn to_seed(&self) -> [u8; 64] {
         let mut seed = [0u8; 64];
@@ -94,14 +90,14 @@ impl Keypair {
         let contents = std::fs::read_to_string(path)?;
         let bytes: Vec<u8> = serde_json::from_str(&contents)
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-        
+
         if bytes.len() != 64 {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
-                "Invalid keypair file: expected 64 bytes"
+                "Invalid keypair file: expected 64 bytes",
             ));
         }
-        
+
         let seed: [u8; 64] = bytes.try_into().unwrap();
         Ok(Self::from_seed(&seed))
     }

@@ -8,7 +8,7 @@ pub mod bridge;
 pub use bridge::{DepositEvent, DepositParams, WithdrawRequest, InitParams};
 
 /// The enum for all inputs to the L2 State Machine.
-#[derive(Debug, Clone, SchemaRead, SchemaWrite,Serialize,Deserialize)]
+#[derive(Debug, Clone, SchemaRead, SchemaWrite)]
 pub enum TransactionType {
     /// PRIVACY: An opaque shielded transaction (The Blob).
     /// Sender/Receiver are hidden. Validity is proven via ZK.
@@ -38,7 +38,7 @@ pub struct PrivateTransaction {
     pub ephemeral_key: [u8; 32],
 }
 /// The Wrapper Structure
-#[derive(Clone, Debug, SchemaWrite, SchemaRead,Serialize,Deserialize)]
+#[derive(Clone, Debug, SchemaWrite, SchemaRead)]
 pub struct Transaction {
     /// For Shielded txs, this might be all zeros or a "Relayer" key.
     pub sender: Pubkey, 
@@ -49,7 +49,7 @@ pub struct Transaction {
 }
 
 /// The payload a user signs.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, SchemaRead, SchemaWrite)]
+#[derive(Debug, Clone, PartialEq, SchemaRead, SchemaWrite)]
 pub struct TransactionData {
     pub from: AccountId,
     pub to: AccountId,
@@ -60,11 +60,11 @@ pub struct TransactionData {
 }
 
 /// The authenticated wrapper around TransactionData.
-#[derive(Debug, Clone, Serialize, Deserialize, SchemaRead, SchemaWrite)]
+#[derive(Debug, Clone, SchemaRead, SchemaWrite)]
 pub struct SignedTransaction {
     pub data: TransactionData,
     /// The Ed25519 signature of the serialized `data`.
-    pub signature: Vec<u8>,
+    pub signature: Signature,
     /// The raw public key of the signer.
-    pub signer_pubkey: [u8; 32],
+    pub signer_pubkey: Pubkey,
 }

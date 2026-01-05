@@ -7,4 +7,5 @@ edition = { workspace = true }
 [dependencies]
 serde = { workspace = true }
 serde_bytes = { workspace = true }
+serde-big-array = "0.5"
 wincode = {workspace = true , features = ["derive"]}

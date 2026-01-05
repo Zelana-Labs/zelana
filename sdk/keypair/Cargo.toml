@@ -11,6 +11,7 @@ wincode = { workspace = true }
 x25519-dalek = { workspace = true, features = ["static_secrets"] }
 zelana-transaction = { workspace = true }
 zelana-account = { workspace = true }
+zelana-signature  = {workspace = true}
 zelana-pubkey = { workspace = true }
 solana-sdk = "3.0.0"
 bs58 = "0.5"

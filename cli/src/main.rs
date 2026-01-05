@@ -132,7 +132,7 @@ fn genkey(filename: Option<String>) -> anyhow::Result<()> {
     }
 
     println!("🔐 Generating new keypair...");
-    let key = Keypair::new_random();
+    let key = Keypair::generate();
     let pubkeys = key.public_keys().as_bs58();
 
     // Create JSON array format like Solana (array of 64 bytes)
