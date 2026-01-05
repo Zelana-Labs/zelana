@@ -132,7 +132,7 @@ impl StateStore for RocksDbStore {
         }
     }
 
-    fn set_account_state(&self, id: AccountId, state: AccountState) -> Result<()> {
+    fn set_account_state(&mut self, id: AccountId, state: AccountState) -> Result<()> {
         let cf = self
             .db
             .cf_handle(CF_ACCOUNTS)

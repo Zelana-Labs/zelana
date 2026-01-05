@@ -5,3 +5,6 @@ pub mod session;
 
 // pub use executor::TransactionExecutor;
 pub use session::SessionManager;
+
+#[cfg(test)]
+mod tests;

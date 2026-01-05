@@ -1,7 +1,9 @@
 // Copyright 2025 Zelana Labs
 // Licensed under the Apache License, Version 2.0
-
+mod constants;
+mod prover_inputs;
 mod l2_circuit;
+mod witness;
 use std::str::FromStr;
 
 use anyhow::{Context, Result};

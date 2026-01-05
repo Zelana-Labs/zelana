@@ -8,5 +8,5 @@ pub trait StateStore {
     fn get_account_state(&self, id: &AccountId) -> Result<AccountState>;
 
     /// Update an account's state.
-    fn set_account_state(&self, id: AccountId, state: AccountState) -> Result<()>;
+    fn set_account_state(&mut self, id: AccountId, state: AccountState) -> Result<()>;
 }

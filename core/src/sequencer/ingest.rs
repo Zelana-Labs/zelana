@@ -38,7 +38,7 @@ use x25519_dalek::{StaticSecret, PublicKey};
 // shared state
 #[derive(Clone)]
 struct AppState {
-    db: Arc<RocksDbStore>,
+    db: RocksDbStore,
     executor: Arc<Mutex<Executor>>,
     sequencer_secret: Arc<StaticSecret>,
     session: Arc<Mutex<Session>>
@@ -58,7 +58,6 @@ pub async fn state_ingest_server(
     sequencer_secret: StaticSecret,
     port: u16,
 ) {
-    let db = Arc::new(db);
 
     let executor = Arc::new(Mutex::new(
     Executor::new(db.clone())

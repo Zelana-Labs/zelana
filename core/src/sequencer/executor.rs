@@ -9,7 +9,7 @@ use crate::storage::state::StateStore;
 
 #[derive(Clone)]
 pub struct Executor {
-    db: Arc<RocksDbStore>,
+    db: RocksDbStore,
     state: InMemoryState,
 }
 
@@ -72,7 +72,7 @@ impl InMemoryState {
 
 
 impl Executor{
-    pub fn new(db: Arc<RocksDbStore>) -> Self {
+    pub fn new(db: RocksDbStore) -> Self {
         Self {
             db,
             state: InMemoryState::default(),
@@ -138,7 +138,7 @@ impl Executor{
     /// Later this must be gated behind:
     /// - block finalization
     /// - prover success
-     pub fn apply_state_diff(&self, diff: StateDiff) -> Result<()> {
+     pub fn apply_state_diff(&mut self, diff: StateDiff) -> Result<()> {
         for (id, state) in diff.updates {
             self.db.set_account_state(id, state)?;
         }
