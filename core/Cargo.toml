@@ -33,11 +33,15 @@ zephyr = { workspace = true }
 zelana-account = { workspace = true }
 zelana-keypair = { workspace = true }
 zelana-transaction = { workspace = true }
+zelana-signature = {workspace = true}
+zelana-pubkey ={ workspace = true}
 axum = "0.8.8"
 tower-http = { version = "0.6.8", features = ["cors", "trace"] }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.148"
 tracing = "0.1.44"
+reqwest = "0.13"
+dirs = "6"
 
 
 [dev-dependencies]

@@ -4,70 +4,100 @@ use solana_client::nonblocking::pubsub_client::PubsubClient;
 use solana_client::rpc_config::{RpcTransactionLogsConfig, RpcTransactionLogsFilter};
 use solana_commitment_config::CommitmentConfig;
 use solana_sdk::pubkey::Pubkey;
-use tokio::net::TcpListener;
 use std::net::SocketAddr;
 use std::str::FromStr;
+use std::sync::Arc;
+use tokio::net::TcpListener;
 use tokio_stream::StreamExt;
 use zelana_account::AccountId;
-use zelana_transaction::{DepositEvent,Transaction, TransactionType};
+use zelana_pubkey::Pubkey as ZelanaPubkey;
+use zelana_transaction::{DepositEvent, SignedTransaction, Transaction, TransactionType};
 
 use super::db::RocksDbStore;
+use crate::sequencer::TransactionExecutor;
 use crate::storage::StateStore;
 
-use axum::{
-    extract::{Json, State},
-    http::StatusCode,
-    routing::post,
-    Router,
-};
+use axum::{Router, body::Bytes, extract::State, http::StatusCode, routing::post};
 use tower_http::cors::CorsLayer;
 
-// shared state
+// shared state - NOW INCLUDES THE EXECUTOR
 #[derive(Clone)]
-struct AppState{
-    db : RocksDbStore
+struct AppState {
+    db: RocksDbStore,
+    executor: Arc<TransactionExecutor>, // ✅ Shared executor
 }
 
-// ingest server ( recieves user TX)
-pub async fn state_ingest_server(db:RocksDbStore,port: u16){
-    let state  = AppState { db};
+// ingest server (receives user TX via HTTP)
+// ✅ Updated signature to accept Arc<TransactionExecutor>
+pub async fn state_ingest_server(db: RocksDbStore, executor: Arc<TransactionExecutor>, port: u16) {
+    let state = AppState {
+        db,
+        executor, // ✅ Store the shared executor
+    };
 
     let app = Router::new()
         .route("/submit_tx", post(handle_submit_tx))
         .layer(CorsLayer::permissive()) // allow from wallet or webpage
         .with_state(state);
 
-    let listener = TcpListener::bind(SocketAddr::from(([0, 0, 0, 0], port))).await.unwrap();
+    let listener = TcpListener::bind(SocketAddr::from(([0, 0, 0, 0], port)))
+        .await
+        .unwrap();
 
+    info!("HTTP ingest server listening on port {}", port);
     axum::serve(listener, app).await.unwrap();
 }
 
-async fn handle_submit_tx(
-    State(state) : State<AppState>,
-    Json(tx) : Json<Transaction>
-)->StatusCode{
-
+async fn handle_submit_tx(State(state): State<AppState>, body: Bytes) -> (StatusCode, String) {
+    // Deserialize the transaction from bytes using wincode
+    let tx: Transaction = match wincode::deserialize(&body) {
+        Ok(t) => t,
+        Err(e) => {
+            error!("Failed to deserialize transaction: {}", e);
+            return (
+                StatusCode::BAD_REQUEST,
+                format!("Invalid transaction format: {}", e),
+            );
+        }
+    };
 
     // Check Double Spend for SHIELDED txs
     if let TransactionType::Shielded(ref blob) = tx.tx_type {
         if state.db.nullifier_exists(&blob.nullifier) {
             warn!("Double spend detected!");
-            return StatusCode::BAD_REQUEST;
+            return (StatusCode::BAD_REQUEST, "Double spend detected".to_string());
         }
     }
-    //Persist to Mempool (RocksDB)
-    if let Err(e) = state.db.add_transaction(tx) {
-        error!("Failed to persist transaction: {}", e);
-        return StatusCode::INTERNAL_SERVER_ERROR;
-    }   
 
+    // Persist to Mempool (RocksDB)
+    if let Err(e) = state.db.add_transaction(tx.clone()) {
+        error!("Failed to persist transaction: {}", e);
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Failed to persist transaction: {}", e),
+        );
+    }
 
     info!("Tx Accepted into Mempool");
-    StatusCode::ACCEPTED
+
+    // ✅ Use the shared executor from AppState
+    match handle_transaction(&tx.tx_type, &state.executor).await {
+        Ok(_) => {
+            info!("Transaction processed successfully");
+            (StatusCode::ACCEPTED, "Transaction accepted".to_string())
+        }
+        Err(e) => {
+            error!("Failed to process transaction: {}", e);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Failed to process transaction: {}", e),
+            )
+        }
+    }
 }
 
 pub async fn start_indexer(db: RocksDbStore, ws_url: String, bridge_program_id: String) {
-    info!(" Indexer started. Watching: {}", bridge_program_id);
+    info!("Indexer started. Watching: {}", bridge_program_id);
 
     let pubsub = match PubsubClient::new(&ws_url).await {
         Ok(client) => client,
@@ -123,9 +153,9 @@ fn parse_deposit_log(payload: &str) -> Option<DepositEvent> {
     let amount = parts[1].parse::<u64>().ok()?;
     let nonce = parts[2].parse::<u64>().ok()?;
 
-    info!("hi");
+    info!("Parsed deposit event");
     Some(DepositEvent {
-        to: map_l1_to_l2(pubkey), // We need this mapping function
+        to: map_l1_to_l2(pubkey),
         amount,
         l1_seq: nonce,
     })
@@ -140,8 +170,7 @@ fn process_deposit(db: &RocksDbStore, event: DepositEvent) {
 
     // 3. Save
     // Note: In production, store the 'l1_seq' to prevent re-processing the same deposit!
-    // For MVP, direct addition is fine.
-    let mut db_mut = db.clone(); // Clone Arc for mutability trait
+    let mut db_mut = db.clone();
     if let Err(e) = db_mut.set_account_state(event.to, account_state) {
         error!("Failed to persist deposit: {}", e);
     } else {
@@ -174,4 +203,56 @@ fn map_l1_to_l2(l1_key: Pubkey) -> AccountId {
     let mut bytes = [0u8; 32];
     bytes.copy_from_slice(l1_key.as_ref());
     AccountId(bytes)
+}
+
+/// Decodes and routes the transaction to the executor
+async fn handle_transaction(
+    tx: &TransactionType,
+    executor: &TransactionExecutor,
+) -> anyhow::Result<()> {
+    match tx {
+        TransactionType::Transfer(signed_tx) => {
+            // Validate Signature (Anti-Spoofing)
+            verify_signature(&signed_tx)?;
+
+            // Execute
+            executor.process(signed_tx.clone()).await?;
+        }
+        _ => {
+            // Handle Deposits/Withdrawals
+            info!("Non-transfer transaction type received");
+        }
+    }
+    Ok(())
+}
+
+/// Verifies Ed25519 signature (64 bytes)
+fn verify_signature(signed_tx: &SignedTransaction) -> anyhow::Result<()> {
+    use ed25519_dalek::{Signature as Ed25519Signature, Verifier, VerifyingKey};
+
+    // 1. Check signature length
+    if signed_tx.signature.0.len() != 64 {
+        return Err(anyhow::anyhow!(
+            "Invalid signature length: expected 64 bytes, got {}",
+            signed_tx.signature.0.len()
+        ));
+    }
+
+    // 2. Serialize the transaction data
+    let message = wincode::serialize(&signed_tx.data)
+        .map_err(|e| anyhow::anyhow!("Failed to serialize tx data: {}", e))?;
+
+    // 3. Create Ed25519 signature from bytes
+    let ed25519_sig = Ed25519Signature::from_bytes(&signed_tx.signature.0);
+
+    // 4. Create verifying key from public key bytes
+    let verifying_key = VerifyingKey::from_bytes(&signed_tx.signer_pubkey.0)
+        .map_err(|e| anyhow::anyhow!("Invalid public key: {}", e))?;
+
+    // 5. Verify the signature
+    verifying_key
+        .verify(&message, &ed25519_sig)
+        .map_err(|_| anyhow::anyhow!("Signature verification failed"))?;
+
+    Ok(())
 }
