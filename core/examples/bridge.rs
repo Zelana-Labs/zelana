@@ -3,7 +3,7 @@ use solana_commitment_config::CommitmentConfig;
 use solana_sdk::{
     instruction::{AccountMeta, Instruction},
     pubkey::Pubkey,
-    signature::{Keypair, Signer},
+    signature::{Keypair, Signer, read_keypair_file},
     transaction::Transaction,
 };
 use std::env;
@@ -14,26 +14,27 @@ const DOMAIN: &[u8] = b"solana";
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let rpc_url = "http://127.0.0.1:8899";
+    let rpc_url = "https://api.devnet.solana.com";
     let bridge_id_str = env::var("BRIDGE_PROGRAM_ID")
         .unwrap_or_else(|_| "9HXapBN9otLGnQNGv1HRk91DGqMNvMAvQqohL7gPW1sd".to_string());
     let program_id = Pubkey::from_str(&bridge_id_str)?;
 
-    let payer = Keypair::new();
-    let sequencer = Keypair::new();
-    
-    let rpc = RpcClient::new_with_commitment(rpc_url.to_string(), CommitmentConfig::confirmed());
+    // Use the default Solana CLI keypair
+    let payer_path = dirs::home_dir()
+        .expect("Unable to get home directory")
+        .join(".config/solana/id.json");
+    let payer: Keypair = read_keypair_file(payer_path)
+        .expect("Failed to read default Solana keypair");
 
-    // Airdrop
-    let sig = rpc.request_airdrop(&payer.pubkey(), 2_000_000_000)?;
-    while !rpc.confirm_transaction(&sig)? {
-        std::thread::sleep(std::time::Duration::from_millis(100));
-    }
+    // Use the same keypair as sequencer for simplicity
+    let sequencer = &payer;
+
+    let rpc = RpcClient::new_with_commitment(rpc_url.to_string(), CommitmentConfig::confirmed());
 
     // Derive PDAs
     let mut domain_padded = [0u8; 32];
     domain_padded[..DOMAIN.len()].copy_from_slice(DOMAIN);
-    
+
     let (config_pda, _) = Pubkey::find_program_address(&[b"config", &domain_padded], &program_id);
     let (vault_pda, _) = Pubkey::find_program_address(&[b"vault", &domain_padded], &program_id);
     let system_id = Pubkey::from_str("11111111111111111111111111111111")?;

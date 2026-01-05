@@ -7,6 +7,7 @@ use solana_sdk::{
     signature::{Keypair, Signer},
     transaction::Transaction,
 };
+use zelana_signature::Signature;
 use std::env;
 use std::str::FromStr;
 use std::time::Duration;
@@ -111,12 +112,12 @@ async fn main() -> anyhow::Result<()> {
 
     let msg = wincode::serialize(&tx_data)?;
     let signing_key = SigningKey::from_bytes(&user.secret_bytes()[0..32].try_into().unwrap());
-    let signature = signing_key.sign(&msg).to_bytes().to_vec();
+    let signature: Signature = Signature(signing_key.sign(&msg).to_bytes());
 
     let signed_tx = SignedTransaction {
         data: tx_data,
         signature,
-        signer_pubkey: user.pubkey().to_bytes(),
+        signer_pubkey: zelana_pubkey::Pubkey(user.pubkey().to_bytes()),
     };
 
     client.send_transaction(signed_tx).await?;

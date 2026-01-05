@@ -2,7 +2,12 @@ use std::{env, str::FromStr};
 
 use solana_client::rpc_client::RpcClient;
 use solana_commitment_config::CommitmentConfig;
-use solana_sdk::{message::{AccountMeta, Instruction}, pubkey::Pubkey, signer::Signer, transaction::Transaction};
+use solana_sdk::{
+    message::{AccountMeta, Instruction},
+    pubkey::Pubkey,
+    signer::Signer,
+    transaction::Transaction,
+};
 use tokio::time::Duration;
 use zelana_keypair::Keypair;
 use zelana_transaction::{DepositParams, TransactionData};
@@ -40,18 +45,20 @@ async fn main() -> anyhow::Result<()> {
     airdrop_if_needed(&rpc, &user2_solkey.pubkey(), "User2").await?;
 
     // Deposit both users
-    deposit_to_l2(&rpc, &program_id, &user1_solkey, 1_300_000_000, 101).await?;
-    deposit_to_l2(&rpc, &program_id, &user2_solkey, 1_300_000_000, 102).await?;
+    // deposit_to_l2(&rpc, &program_id, &user1_solkey, 1_300_000_000, 108).await?;
+    // deposit_to_l2(&rpc, &program_id, &user2_solkey, 1_300_000_000, 109).await?;
 
     let mut client = ZelanaClient::connect("127.0.0.1:9000").await?;
 
-    let signed_tx = user1.sign_transaction(TransactionData {
+    let tx = TransactionData {
         from: user1_id,
         to: user2_id,
         amount: 10,
-        nonce: 0,
+        nonce: 5,
         chain_id: 1,
-    });
+    };
+
+    let signed_tx = user1.sign_transaction(tx);
 
     client.send_transaction(signed_tx).await?;
     println!("✓ Transaction sent");
@@ -74,7 +81,12 @@ async fn deposit_to_l2(
     let (config_pda, _) = Pubkey::find_program_address(&[b"config", &domain_padded], program_id);
     let (vault_pda, _) = Pubkey::find_program_address(&[b"vault", &domain_padded], program_id);
     let (receipt_pda, _) = Pubkey::find_program_address(
-        &[b"receipt", &domain_padded, user_solkey.pubkey().as_ref(), &nonce.to_le_bytes()],
+        &[
+            b"receipt",
+            &domain_padded,
+            user_solkey.pubkey().as_ref(),
+            &nonce.to_le_bytes(),
+        ],
         program_id,
     );
 
