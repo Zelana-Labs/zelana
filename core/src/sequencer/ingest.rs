@@ -7,16 +7,10 @@ use solana_sdk::pubkey::Pubkey;
 use tokio::net::TcpListener;
 use std::net::SocketAddr;
 use std::str::FromStr;
-use std::sync::{Arc};
+use std::sync::Arc;
+use std::mem;
 use tokio::sync::Mutex;
 use tokio_stream::StreamExt;
-use zelana_account::AccountId;
-use zelana_transaction::{DepositEvent};
-use super::executor::Executor;
-use super::db::RocksDbStore;
-use crate::sequencer::executor::StateDiff;
-use crate::sequencer::session::Session;
-use crate::storage::StateStore;
 
 use axum::{
     extract::{Json, State},
@@ -26,24 +20,36 @@ use axum::{
 };
 use tower_http::cors::CorsLayer;
 
-use txblob::{
-    EncryptedTxBlobV1,
-    decrypt_signed_tx,
-    tx_blob_hash,
-};
+use wincode::{SchemaRead,SchemaWrite};
 
 use x25519_dalek::{StaticSecret, PublicKey};
+
+use zelana_account::AccountId;
+use zelana_transaction::DepositEvent;
+
+use txblob::{EncryptedTxBlobV1, decrypt_signed_tx, tx_blob_hash};
+
+use super::db::RocksDbStore;
+use super::executor::Executor;
+use super::session::Session;
+use crate::storage::StateStore;
+
+/// === CONFIG ===
+const MAX_TX_PER_BLOCK: u32 = 2;
+const CHAIN_ID: u64 = 1;
 
 
 // shared state
 #[derive(Clone)]
 struct AppState {
-    db: RocksDbStore,
+    db: Arc<RocksDbStore>,
     executor: Arc<Mutex<Executor>>,
+    session: Arc<Mutex<Session>>,
     sequencer_secret: Arc<StaticSecret>,
-    session: Arc<Mutex<Session>>
 }
 
+
+/// Request format for submitting an encrypted tx blob
 #[derive(serde::Deserialize)]
 pub struct SubmitBlobRequest {
     /// Serialized EncryptedTxBlobV1 (wincode)
@@ -58,9 +64,10 @@ pub async fn state_ingest_server(
     sequencer_secret: StaticSecret,
     port: u16,
 ) {
+    let db = Arc::new(db);
 
     let executor = Arc::new(Mutex::new(
-    Executor::new(db.clone())
+        Executor::new(db.clone())
     ));
 
     let session = Arc::new(Mutex::new(Session::new(0)));
@@ -85,12 +92,13 @@ pub async fn state_ingest_server(
 async fn handle_submit_tx(
     State(state): State<AppState>,
     Json(req): Json<SubmitBlobRequest>,
-) -> StatusCode {
+) -> Result<StatusCode,StatusCode> {
+    
     let blob: EncryptedTxBlobV1 = match wincode::deserialize(&req.blob) {
         Ok(b) => b,
         Err(_) => {
             warn!("Invalid tx blob serialization");
-            return StatusCode::BAD_REQUEST;
+            return Err(StatusCode::BAD_REQUEST);
         }
     };
     //Hash (canonical tx ID)
@@ -106,9 +114,23 @@ async fn handle_submit_tx(
         Ok(tx) => tx,
         Err(_) => {
             warn!("Tx decryption failed");
-            return StatusCode::BAD_REQUEST;
+            return Err(StatusCode::BAD_REQUEST);
         }
     };
+
+     if signed_tx.data.chain_id != CHAIN_ID {
+        warn!("Rejected tx with invalid chain_id");
+        return Err(StatusCode::BAD_REQUEST);
+    }
+
+    info!(
+    "EXEC DEBUG: account_nonce_expected={}, tx_nonce={}",
+    state.db
+        .get_account_state(&AccountId(signed_tx.signer_pubkey))
+        .unwrap()
+        .nonce,
+    signed_tx.data.nonce
+    );
 
     let mut executor = state.executor.lock().await;
 
@@ -119,57 +141,78 @@ async fn handle_submit_tx(
         Ok(r) => r,
         Err(e) => {
             warn!("Execution failed: {:?}", e);
-            return StatusCode::BAD_REQUEST;
+            return Err(StatusCode::BAD_REQUEST);
         }
     };
 
-    {
-        let mut session = state.session.lock().await;
-        session.push_execution(exec_result);
-    }
-    // (MVP) Optional nullifier checks would go here
+    let mut session = state.session.lock().await;
+    session.push_execution(exec_result);
+
     // if blob.flags & FLAG_SHIELDED != 0 { ... }
     if let Err(e) = state.db.add_encrypted_tx(tx_hash, req.blob) {
         error!("Failed to persist encrypted tx: {}", e);
-        return StatusCode::INTERNAL_SERVER_ERROR;
+        return Err(StatusCode::INTERNAL_SERVER_ERROR);
     }
 
-    {
-        let mut session = state.session.lock().await;
+   if session.tx_count() >= MAX_TX_PER_BLOCK {
+    info!("Closing batch {}", session.batch_id);
 
-        if session.tx_count() >= 100 {
-            let prev_root = state
-                .db
-                .get_latest_state_root()
-                .unwrap_or([0u8; 32]);
-
-            let closed = session.clone().close(prev_root);
-
-            // Commit state (MVP: no prover gate yet)
-            if let Err(e) = executor.apply_state_diff(
-                StateDiff {
-        updates: closed.merged_state.clone(),
-    }
-            ) {
-                error!("Failed to apply state diff: {}", e);
-                return StatusCode::INTERNAL_SERVER_ERROR;
-            }
-
-            executor.reset();
-
-            if let Err(e) = state.db.store_block_header(closed.header) {
-                error!("Failed to store block header: {}", e);
-                return StatusCode::INTERNAL_SERVER_ERROR;
-            }
-
-            *session = Session::new(closed.header.batch_id + 1);
-
-            info!("Block {} committed", closed.header.batch_id);
+    // 1. Fetch previous state root from DB
+    let prev_root = match state.db.get_latest_state_root() {
+        Ok(r) => r,
+        Err(e) => {
+            error!("Failed to fetch previous root: {}", e);
+            return Err(StatusCode::INTERNAL_SERVER_ERROR);
         }
+    };
+
+    // 2. Lock executor ONCE and finalize state
+    let (new_root, batch_id, tx_count) = {
+        let mut executor = state.executor.lock().await;
+
+        // Compute new root from executor state
+        let new_root = executor.state_root();
+
+        // Apply final state to DB  
+        
+        if let Err(e) = executor.apply_state_diff() {
+            error!("Failed to apply state diff: {}", e);
+            return Err(StatusCode::INTERNAL_SERVER_ERROR);
+        }
+
+        // Reset executor for next batch
+
+        (new_root, session.batch_id, session.tx_count())
+    };
+
+    // 3. Take ownership of the session and close it
+    let closed = {
+        let mut guard = state.session.lock().await;
+
+        // Replace current session with a fresh one
+        let current = std::mem::replace(
+            &mut *guard,
+            Session::new(batch_id + 1),
+        );
+
+        current.close(prev_root, new_root)
+    };
+
+    // 4. Persist block header
+    if let Err(e) = state.db.store_block_header(closed.header.clone()) {
+        error!("Failed to store block header: {}", e);
+        return Err(StatusCode::INTERNAL_SERVER_ERROR);
     }
 
-    info!("Encrypted tx accepted: {:?}", tx_hash);
-    StatusCode::ACCEPTED
+    info!(
+        "Batch {} committed with {} txs",
+        closed.header.batch_id,
+        tx_count
+    );
+}
+
+
+    Ok(StatusCode::ACCEPTED)
 }
 
 // async fn handle_submit_tx(
@@ -183,7 +226,7 @@ async fn handle_submit_tx(
 //         match state.db.nullifier_exists(&blob.nullifier) {
 //             Ok(true) => {
 //                 warn!("Double spend detected!");
-//                 return StatusCode::BAD_REQUEST;
+//                 return Err(StatusCode::BAD_REQUEST);
 //             }
 //             Ok(false)=>{}
 //             Err(e)=>{
@@ -275,8 +318,8 @@ fn process_deposit(db: &RocksDbStore, event: DepositEvent) {
     account_state.balance =
         account_state.balance.saturating_add(event.amount);
 
-    let mut db_mut = db.clone();
-    if let Err(e) = db_mut.set_account_state(event.to, account_state) {
+    let db = db.clone();
+    if let Err(e) = db.set_account_state(event.to, account_state) {
         error!("Failed to persist deposit: {}", e);
     } else {
         info!("DEPOSIT: +{} for {:?}", event.amount, event.to);

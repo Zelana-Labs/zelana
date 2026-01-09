@@ -15,7 +15,6 @@ use crate::sequencer::executor::ExecutionResult;
 pub struct Session{
     pub batch_id: u64,
     pub txs: Vec<ExecutionResult>,
-    pub merged_state: HashMap<AccountId,AccountState>,
 }
 
 impl Session{
@@ -23,13 +22,9 @@ impl Session{
         Self {
             batch_id,
             txs: Vec::new(),
-            merged_state: HashMap::new(),
         }
     }
     pub fn push_execution(&mut self, exec: ExecutionResult) {
-        for (id, state) in &exec.state_diff.updates {
-            self.merged_state.insert(*id, state.clone());
-        }
         self.txs.push(exec);
     }
 
@@ -37,8 +32,7 @@ impl Session{
         self.txs.len() as u32
     }
 
-    pub fn close(self, prev_root: [u8; 32]) -> ClosedSession {
-        let new_root = compute_state_root(&self.merged_state);
+    pub fn close(self, prev_root: [u8; 32], new_root: [u8; 32]) -> ClosedSession {
 
         let header = BlockHeader {
             magic: HEADER_MAGIC,
@@ -53,7 +47,7 @@ impl Session{
 
         ClosedSession {
             header,
-            merged_state: self.merged_state,
+            txs:self.txs
         }
     }
 }
@@ -61,7 +55,7 @@ impl Session{
 // ready to commit ( closed session)
 pub struct ClosedSession {
     pub header: BlockHeader,
-    pub merged_state: HashMap<AccountId, AccountState>,
+    pub txs: Vec<ExecutionResult>,
 }
 
 

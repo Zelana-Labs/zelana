@@ -5,11 +5,12 @@ use zelana_transaction::{SignedTransaction, TransactionType,Transaction,Transact
 use std::{collections::HashMap, sync::Arc};
 use super::db::RocksDbStore;
 use crate::storage::state::StateStore;
+use crate::sequencer::session::compute_state_root;
 // use crate::storage::BatchExecutor;
 
 #[derive(Clone)]
 pub struct Executor {
-    db: RocksDbStore,
+    db: Arc<RocksDbStore>,
     state: InMemoryState,
 }
 
@@ -49,13 +50,19 @@ impl InMemoryState {
         db: &RocksDbStore,
         id: &AccountId,
     ) -> Result<AccountState> {
-        if let Some(st) = self.accounts.get(id) {
-            return Ok(st.clone());
-        }
+        info!(
+    "CACHE LOOKUP: id={}, has_cached={}",
+    id.to_hex(),
+    
+    self.accounts.contains_key(id)
+    );
 
-        let st = db.get_account_state(id).unwrap_or_default();
-        self.accounts.insert(*id, st.clone());
-        Ok(st)
+        if let Some(st) = self.accounts.get(id) {
+        return Ok(st.clone());
+    }
+
+    // Load from DB, but DO NOT cache
+    Ok(db.get_account_state(id).unwrap_or_default())
     }
 
     fn set_account(&mut self, id: AccountId, state: AccountState) {
@@ -72,7 +79,7 @@ impl InMemoryState {
 
 
 impl Executor{
-    pub fn new(db: RocksDbStore) -> Self {
+    pub fn new(db: Arc<RocksDbStore>) -> Self {
         Self {
             db,
             state: InMemoryState::default(),
@@ -83,12 +90,17 @@ impl Executor{
     ///
     /// - Mutates ONLY in-memory state
     /// - Returns a StateDiff
-    /// - Does NOT commit to DB
     pub fn execute_signed_tx(
         &mut self,
         tx: SignedTransaction,
         tx_hash: [u8;32]
     )->Result<ExecutionResult,ExecutionError>{
+        info!(
+        "EXEC CACHE DEBUG: accounts={}, touched={}",
+        self.state.accounts.len(),
+        self.state.touched.len()
+    );
+
         let TransactionData {
             to,
             amount,
@@ -100,32 +112,43 @@ impl Executor{
         
         //load sender and receiver state
         let mut from_state = self
-            .state
-            .load_account(&self.db, &from)
-            .map_err(|_| ExecutionError::AccountNotFound)?;
+    .state
+    .load_account(&self.db, &from)
+    .map_err(|_| ExecutionError::AccountNotFound)?;
 
-        let mut to_state = self
-            .state
-            .load_account(&self.db, &to)
-            .map_err(|_| ExecutionError::AccountNotFound)?;
+if from == to {
+    // Self-transfer: only nonce changes
+    if from_state.balance < amount {
+        return Err(ExecutionError::InsufficientBalance);
+    }
+    if from_state.nonce != nonce {
+        return Err(ExecutionError::InvalidNonce);
+    }
 
-        //validate nonce
-        if from_state.nonce != nonce{
-            return Err(ExecutionError::InvalidNonce);
-        }
+    from_state.nonce += 1;
 
-        //validate balance
-        if from_state.balance < amount{
-            return Err(ExecutionError::InsufficientBalance);
-        }
+    self.state.set_account(from, from_state);
+} else {
+    let mut to_state = self
+        .state
+        .load_account(&self.db, &to)
+        .map_err(|_| ExecutionError::AccountNotFound)?;
 
-        from_state.balance -= amount;
-        from_state.nonce += 1;
+    if from_state.balance < amount {
+        return Err(ExecutionError::InsufficientBalance);
+    }
+    if from_state.nonce != nonce {
+        return Err(ExecutionError::InvalidNonce);
+    }
 
-        to_state.balance += amount;
+    from_state.balance -= amount;
+    from_state.nonce += 1;
+    to_state.balance += amount;
 
-        self.state.set_account(from, from_state);
-        self.state.set_account(to, to_state);
+    self.state.set_account(from, from_state);
+    self.state.set_account(to, to_state);
+}
+
 
         Ok(ExecutionResult {
             tx_hash,
@@ -133,20 +156,23 @@ impl Executor{
         })
     }
 
-    /// Apply a state diff to persistent storage
-    ///
-    /// Later this must be gated behind:
-    /// - block finalization
-    /// - prover success
-     pub fn apply_state_diff(&mut self, diff: StateDiff) -> Result<()> {
+    /// Reset in-memory cache (after block finalization)
+    pub fn reset(&mut self) {
+        self.state.accounts.clear();
+        self.state.touched.clear();
+    }
+    pub fn state_root(&self) -> [u8; 32] {
+        compute_state_root(&self.state.accounts)
+    }
+    pub fn apply_state_diff(&mut self) -> Result<(), anyhow::Error> {
+        // Apply all touched account states to persistent storage
+        let diff = self.state.diff();
+
         for (id, state) in diff.updates {
             self.db.set_account_state(id, state)?;
         }
+
         Ok(())
-    }
-    /// Reset in-memory cache (after block finalization)
-    pub fn reset(&mut self) {
-        self.state = InMemoryState::default();
     }
 }
 

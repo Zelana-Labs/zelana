@@ -58,7 +58,7 @@ fn valid_transfer_updates_state() {
     )
     .unwrap();
 
-    let mut executor = Executor::new(db.clone());
+    let mut executor = Executor::new(db.clone().into());
 
     let tx = signed_transfer(from, to, 25, 0);
     let tx_hash = [1u8; 32];
@@ -88,7 +88,7 @@ fn invalid_nonce_fails() {
     )
     .unwrap();
 
-    let mut executor = Executor::new(db.clone());
+    let mut executor = Executor::new(db.clone().into());
 
     let tx = signed_transfer(from, to, 10, 0); // WRONG nonce
 
@@ -111,7 +111,7 @@ fn insufficient_balance_fails() {
     )
     .unwrap();
 
-    let mut executor = Executor::new(db.clone());
+    let mut executor = Executor::new(db.clone().into());
 
     let tx = signed_transfer(from, to, 10, 0); // too much
 
@@ -124,7 +124,7 @@ fn insufficient_balance_fails() {
 
 #[test]
 fn executor_does_not_mutate_db() {
-    let mut db = temp_db();
+    let db = temp_db();
     let from = account(1);
     let to = account(2);
 
@@ -134,7 +134,7 @@ fn executor_does_not_mutate_db() {
     )
     .unwrap();
 
-    let mut executor = Executor::new(db.clone());
+    let mut executor = Executor::new(db.clone().into());
 
     let tx = signed_transfer(from, to, 20, 0);
     executor.execute_signed_tx(tx, [0u8; 32]).unwrap();

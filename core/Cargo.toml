@@ -40,6 +40,7 @@ serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.148"
 tracing = "0.1.44"
 chrono = "0.4.42"
+reqwest = {version = "0.13.1" , features = ["json"]}
 
 
 [dev-dependencies]

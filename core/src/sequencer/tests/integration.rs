@@ -93,7 +93,7 @@ fn encrypted_tx_executes_and_updates_state() {
     .unwrap();
 
     // --- Execute ---
-    let mut executor = Executor::new(db.clone());
+    let mut executor = Executor::new(db.clone().into());
     let exec_result = executor
         .execute_signed_tx(decrypted, tx_hash)
         .unwrap();
@@ -103,19 +103,17 @@ fn encrypted_tx_executes_and_updates_state() {
     session.push_execution(exec_result);
 
     let prev_root = [0u8; 32];
-    let closed = session.close(prev_root);
+    let new_root = [1u8;32];
+    let closed = session.close(prev_root,new_root);
+
 
     // --- Persist state ---
    // --- Persist final state ---
-    for (id, state) in &closed.merged_state {
-        db.set_account_state(*id, state.clone()).unwrap();
-    }
-
     db.store_block_header(closed.header.clone()).unwrap();
 
 
     // --- Assertions ---
-    let from_state = db.get_account_state(&from).unwrap();
+    let from_state = db.get_account_sta0te(&from).unwrap();
     let to_state = db.get_account_state(&to).unwrap();
 
     assert_eq!(from_state.balance, 75);
