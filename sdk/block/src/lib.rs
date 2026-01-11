@@ -1,14 +1,14 @@
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use serde::Serialize;
 use std::io::{Cursor, Read, Write};
-use wincode::{SchemaRead,SchemaWrite};
+use wincode::{SchemaRead, SchemaWrite};
 
 // Block header
 pub const HEADER_MAGIC: [u8; 4] = *b"ZLNA";
 pub const HEADER_VERSION: u16 = 1;
 pub const HEADER_SIZE: usize = 96;
 
-#[derive(Debug, Clone,Copy, PartialEq, Serialize,SchemaRead,SchemaWrite)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, SchemaRead, SchemaWrite)]
 pub struct BlockHeader {
     #[serde(with = "hex::serde")]
     pub magic: [u8; 4],

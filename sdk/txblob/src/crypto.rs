@@ -5,26 +5,22 @@ use chacha20poly1305::{
 use hkdf::Hkdf;
 use sha2::Sha256;
 // use rand_core::{OsRng, RngCore};
-use chacha20poly1305::aead::rand_core::{OsRng,RngCore};
+use chacha20poly1305::aead::rand_core::{OsRng, RngCore};
 use wincode::{SchemaRead, SchemaWrite};
-use x25519_dalek::{StaticSecret, PublicKey};
+use x25519_dalek::{PublicKey, StaticSecret};
 
-use zelana_transaction::SignedTransaction;
 use crate::types::{EncryptedTxBlobV1, TX_BLOB_VERSION_V1, sender_hint_from_pubkey};
+use zelana_transaction::SignedTransaction;
 
-#[derive(Debug,SchemaRead,SchemaWrite)]
+#[derive(Debug, SchemaRead, SchemaWrite)]
 pub enum TxBlobError {
     DecryptionFailed,
     DeserializationFailed,
     EncryptionFailed,
-    SerializationFailed
+    SerializationFailed,
 }
 
-
-fn derive_aead_key(
-    my_secret: &StaticSecret,
-    their_pub: &PublicKey,
-) -> [u8; 32] {
+fn derive_aead_key(my_secret: &StaticSecret, their_pub: &PublicKey) -> [u8; 32] {
     let shared = my_secret.diffie_hellman(their_pub);
     let hk = Hkdf::<Sha256>::new(None, shared.as_bytes());
 
@@ -40,9 +36,8 @@ pub fn encrypt_signed_tx(
     client_secret: &StaticSecret,
     sequencer_pub: &PublicKey,
     flags: u8,
-) -> Result<EncryptedTxBlobV1,TxBlobError> {
-    let plaintext =
-        wincode::serialize(signed_tx).map_err(|_| TxBlobError::SerializationFailed)?;
+) -> Result<EncryptedTxBlobV1, TxBlobError> {
+    let plaintext = wincode::serialize(signed_tx).map_err(|_| TxBlobError::SerializationFailed)?;
 
     let sender_hint = sender_hint_from_pubkey(sender_pubkey);
 
@@ -58,13 +53,15 @@ pub fn encrypt_signed_tx(
     aad[1] = flags;
     aad[2..].copy_from_slice(&sender_hint);
 
-    let encrypted = cipher.encrypt(
-        &nonce.into(),
-        Payload {
-            msg: &plaintext,
-            aad: &aad,
-        },
-    ).map_err(|_| TxBlobError::EncryptionFailed)?;
+    let encrypted = cipher
+        .encrypt(
+            &nonce.into(),
+            Payload {
+                msg: &plaintext,
+                aad: &aad,
+            },
+        )
+        .map_err(|_| TxBlobError::EncryptionFailed)?;
 
     let split = encrypted.len() - 16;
     let (ciphertext, tag) = encrypted.split_at(split);
@@ -93,18 +90,18 @@ pub fn decrypt_signed_tx(
     aad[1] = blob.flags;
     aad[2..].copy_from_slice(&blob.sender_hint);
 
-
     let mut combined = blob.ciphertext.clone();
     combined.extend_from_slice(&blob.tag);
 
-    let plaintext = cipher.decrypt(
-        &blob.nonce.into(),
-        Payload {
-            msg: &combined,
-            aad: &aad,
-        },
-    ).map_err(|_| TxBlobError::DecryptionFailed)?;
+    let plaintext = cipher
+        .decrypt(
+            &blob.nonce.into(),
+            Payload {
+                msg: &combined,
+                aad: &aad,
+            },
+        )
+        .map_err(|_| TxBlobError::DecryptionFailed)?;
 
-    wincode::deserialize(&plaintext)
-        .map_err(|_| TxBlobError::DeserializationFailed)
+    wincode::deserialize(&plaintext).map_err(|_| TxBlobError::DeserializationFailed)
 }

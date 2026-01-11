@@ -1,6 +1,6 @@
 pub mod accounts;
-pub mod transactions;
-pub mod nullifiers;
 pub mod layout;
+pub mod nullifiers;
+pub mod transactions;
 
 pub use layout::render_ui;

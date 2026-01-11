@@ -1,11 +1,10 @@
-
+use reqwest::Client;
 use tokio::time::{Duration, sleep};
 use txblob::{EncryptedTxBlobV1, encrypt_signed_tx};
 use x25519_dalek::{PublicKey, StaticSecret};
 use zelana_keypair::Keypair;
 use zelana_transaction::TransactionData;
 use zephyr::client::ZelanaClient;
-use reqwest::Client;
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     env_logger::init();
@@ -25,7 +24,6 @@ async fn main() -> anyhow::Result<()> {
     let client_pub = PublicKey::from(&client_secret);
 
     let sequencer_pub = PublicKey::from(&StaticSecret::from([42u8; 32]));
-    
 
     for nonce in 0..5 {
         println!("CLIENT: Sending tx with nonce {}", nonce);
@@ -46,7 +44,8 @@ async fn main() -> anyhow::Result<()> {
             &client_secret,
             &sequencer_pub,
             0, // flags
-        ).unwrap();
+        )
+        .unwrap();
 
         let blob_bytes = wincode::serialize(&encrypted)?;
 

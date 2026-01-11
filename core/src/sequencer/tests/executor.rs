@@ -1,11 +1,11 @@
 use std::sync::Arc;
 use tempfile::TempDir;
 
+use crate::sequencer::db::RocksDbStore;
+use crate::sequencer::executor::{ExecutionError, Executor};
+use crate::storage::state::StateStore;
 use zelana_account::{AccountId, AccountState};
 use zelana_transaction::{SignedTransaction, TransactionData};
-use crate::sequencer::executor::{Executor, ExecutionError};
-use crate::sequencer::db::RocksDbStore;
-use crate::storage::state::StateStore;
 
 /// Create a temp RocksDB
 fn temp_db() -> RocksDbStore {
@@ -19,12 +19,7 @@ fn account(id: u8) -> AccountId {
     AccountId(bytes)
 }
 
-fn signed_transfer(
-    from: AccountId,
-    to: AccountId,
-    amount: u64,
-    nonce: u64,
-) -> SignedTransaction {
+fn signed_transfer(from: AccountId, to: AccountId, amount: u64, nonce: u64) -> SignedTransaction {
     SignedTransaction {
         data: TransactionData {
             from,
@@ -48,13 +43,19 @@ fn valid_transfer_updates_state() {
     // Seed DB
     db.set_account_state(
         from,
-        AccountState { balance: 100, nonce: 0 },
+        AccountState {
+            balance: 100,
+            nonce: 0,
+        },
     )
     .unwrap();
 
     db.set_account_state(
         to,
-        AccountState { balance: 10, nonce: 0 },
+        AccountState {
+            balance: 10,
+            nonce: 0,
+        },
     )
     .unwrap();
 
@@ -84,7 +85,10 @@ fn invalid_nonce_fails() {
 
     db.set_account_state(
         from,
-        AccountState { balance: 50, nonce: 1 },
+        AccountState {
+            balance: 50,
+            nonce: 1,
+        },
     )
     .unwrap();
 
@@ -92,9 +96,7 @@ fn invalid_nonce_fails() {
 
     let tx = signed_transfer(from, to, 10, 0); // WRONG nonce
 
-    let err = executor
-        .execute_signed_tx(tx, [0u8; 32])
-        .unwrap_err();
+    let err = executor.execute_signed_tx(tx, [0u8; 32]).unwrap_err();
 
     matches!(err, ExecutionError::InvalidNonce);
 }
@@ -107,7 +109,10 @@ fn insufficient_balance_fails() {
 
     db.set_account_state(
         from,
-        AccountState { balance: 5, nonce: 0 },
+        AccountState {
+            balance: 5,
+            nonce: 0,
+        },
     )
     .unwrap();
 
@@ -115,9 +120,7 @@ fn insufficient_balance_fails() {
 
     let tx = signed_transfer(from, to, 10, 0); // too much
 
-    let err = executor
-        .execute_signed_tx(tx, [0u8; 32])
-        .unwrap_err();
+    let err = executor.execute_signed_tx(tx, [0u8; 32]).unwrap_err();
 
     matches!(err, ExecutionError::InsufficientBalance);
 }
@@ -130,7 +133,10 @@ fn executor_does_not_mutate_db() {
 
     db.set_account_state(
         from,
-        AccountState { balance: 100, nonce: 0 },
+        AccountState {
+            balance: 100,
+            nonce: 0,
+        },
     )
     .unwrap();
 

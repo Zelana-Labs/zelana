@@ -1,0 +1,36 @@
+[package]
+name = "zelana-privacy"
+repository.workspace = true
+version = { workspace = true }
+edition = { workspace = true }
+description = "Zcash-style shielded transaction primitives for Zelana"
+
+
+[dependencies]
+# Arkworks for ZK-friendly cryptography
+ark-std = { version = "=0.5.0", features = ["std"] }
+ark-ff = "=0.5.0"
+ark-ec = "=0.5.0"
+ark-serialize = "=0.5.0"
+ark-bls12-381 = "=0.5.0"
+ark-ed-on-bls12-381 = "=0.5.0"
+ark-crypto-primitives = { version = "=0.5.0", default-features = false, features = [
+    "std",
+    "sponge",
+    "crh",
+] }
+
+# Standard deps
+rand = "0.8"
+rand_core = { workspace = true }
+serde = { workspace = true }
+thiserror = { workspace = true }
+blake3 = { workspace = true }
+chacha20poly1305 = { workspace = true }
+x25519-dalek = { workspace = true }
+
+# Internal
+zelana-keypair = { workspace = true }
+
+[dev-dependencies]
+hex = "0.4"

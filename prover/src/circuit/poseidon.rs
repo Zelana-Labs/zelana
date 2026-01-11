@@ -1,8 +1,5 @@
 use ark_bls12_381::Fr;
-use ark_crypto_primitives::sponge::poseidon::{
-    PoseidonConfig,
-    find_poseidon_ark_and_mds,
-};
+use ark_crypto_primitives::sponge::poseidon::{PoseidonConfig, find_poseidon_ark_and_mds};
 
 /// Poseidon configuration for ZELANA
 ///

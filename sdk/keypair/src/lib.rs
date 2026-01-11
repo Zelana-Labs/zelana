@@ -80,7 +80,7 @@ impl Keypair {
         }
     }
 
-      /// Exports the keypair as a 64-byte seed (for saving to file).
+    /// Exports the keypair as a 64-byte seed (for saving to file).
     /// ⚠️ SENSITIVE: Only use this for encrypted storage!
     pub fn to_seed(&self) -> [u8; 64] {
         let mut seed = [0u8; 64];
@@ -94,14 +94,14 @@ impl Keypair {
         let contents = std::fs::read_to_string(path)?;
         let bytes: Vec<u8> = serde_json::from_str(&contents)
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-        
+
         if bytes.len() != 64 {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
-                "Invalid keypair file: expected 64 bytes"
+                "Invalid keypair file: expected 64 bytes",
             ));
         }
-        
+
         let seed: [u8; 64] = bytes.try_into().unwrap();
         Ok(Self::from_seed(&seed))
     }

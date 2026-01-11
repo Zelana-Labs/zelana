@@ -1,15 +1,17 @@
-use std::path::PathBuf;
 use anyhow::{Context, Result};
-use rocksdb::{ColumnFamilyDescriptor, IteratorMode, Options, DB};
+use hex;
+use rocksdb::{ColumnFamilyDescriptor, DB, IteratorMode, Options};
+use std::path::PathBuf;
 use zelana_account::AccountState;
 use zelana_transaction::Transaction;
-use hex;
 
 const CF_ACCOUNTS: &str = "accounts";
 const CF_TRANSACTIONS: &str = "transactions";
 const CF_NULLIFIERS: &str = "nullifiers";
 
-pub fn load_database(db_path: &str) -> Result<(
+pub fn load_database(
+    db_path: &str,
+) -> Result<(
     Vec<(String, AccountState)>,
     Vec<(String, Transaction)>,
     Vec<String>,

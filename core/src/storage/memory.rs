@@ -1,7 +1,7 @@
 use crate::storage::StateStore;
 use anyhow::Result;
 use blake3::Hasher;
-use sha2::{Sha256,Digest};
+use sha2::{Digest, Sha256};
 use std::{cell::RefCell, collections::HashMap};
 use zelana_account::{AccountId, AccountState};
 
@@ -15,7 +15,9 @@ impl ZkMemStore {
     // Initialize from sequencer-provided witness
     /// Witness MUST represent the full post-state of the block
     pub fn new(witness: HashMap<AccountId, AccountState>) -> Self {
-        Self { accounts: RefCell::new(witness) }
+        Self {
+            accounts: RefCell::new(witness),
+        }
     }
 
     // Computes the cryptographic commitment (state root)

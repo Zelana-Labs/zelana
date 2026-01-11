@@ -1,19 +1,15 @@
 use std::sync::Arc;
 use tempfile::TempDir;
 
-use x25519_dalek::{StaticSecret, PublicKey};
+use x25519_dalek::{PublicKey, StaticSecret};
 
-use zelana_account::{AccountId, AccountState};
-use zelana_transaction::{SignedTransaction, TransactionData};
-use zelana_block::HEADER_MAGIC;
 use crate::storage::state::StateStore;
-use txblob::{encrypt_signed_tx, decrypt_signed_tx};
+use txblob::{decrypt_signed_tx, encrypt_signed_tx};
+use zelana_account::{AccountId, AccountState};
+use zelana_block::HEADER_MAGIC;
+use zelana_transaction::{SignedTransaction, TransactionData};
 
-use crate::sequencer::{
-    db::RocksDbStore,
-    executor::Executor,
-    session::Session,
-};
+use crate::sequencer::{db::RocksDbStore, executor::Executor, session::Session};
 
 /// Helpers
 
@@ -52,13 +48,19 @@ fn encrypted_tx_executes_and_updates_state() {
 
     db.set_account_state(
         from,
-        AccountState { balance: 100, nonce: 0 },
+        AccountState {
+            balance: 100,
+            nonce: 0,
+        },
     )
     .unwrap();
 
     db.set_account_state(
         to,
-        AccountState { balance: 0, nonce: 0 },
+        AccountState {
+            balance: 0,
+            nonce: 0,
+        },
     )
     .unwrap();
 
@@ -85,35 +87,26 @@ fn encrypted_tx_executes_and_updates_state() {
     let tx_hash = [7u8; 32];
 
     // --- Decrypt in sequencer ---
-    let decrypted = decrypt_signed_tx(
-        &blob,
-        &sequencer_secret,
-        &client_pub,
-    )
-    .unwrap();
+    let decrypted = decrypt_signed_tx(&blob, &sequencer_secret, &client_pub).unwrap();
 
     // --- Execute ---
     let mut executor = Executor::new(db.clone().into());
-    let exec_result = executor
-        .execute_signed_tx(decrypted, tx_hash)
-        .unwrap();
+    let exec_result = executor.execute_signed_tx(decrypted, tx_hash).unwrap();
 
     // --- Batch in session ---
     let mut session = Session::new(1);
     session.push_execution(exec_result);
 
     let prev_root = [0u8; 32];
-    let new_root = [1u8;32];
-    let closed = session.close(prev_root,new_root);
-
+    let new_root = [1u8; 32];
+    let closed = session.close(prev_root, new_root);
 
     // --- Persist state ---
-   // --- Persist final state ---
+    // --- Persist final state ---
     db.store_block_header(closed.header.clone()).unwrap();
 
-
     // --- Assertions ---
-    let from_state = db.get_account_sta0te(&from).unwrap();
+    let from_state = db.get_account_state(&from).unwrap();
     let to_state = db.get_account_state(&to).unwrap();
 
     assert_eq!(from_state.balance, 75);

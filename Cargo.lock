@@ -1145,6 +1145,7 @@ dependencies = [
  "zelana-account",
  "zelana-block",
  "zelana-keypair",
+ "zelana-privacy",
  "zelana-transaction",
  "zephyr",
 ]
@@ -8196,6 +8197,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "zelana-privacy"
+version = "0.1.0"
+dependencies = [
+ "ark-bls12-381",
+ "ark-crypto-primitives",
+ "ark-ec",
+ "ark-ed-on-bls12-381",
+ "ark-ff",
+ "ark-serialize",
+ "ark-std",
+ "blake3",
+ "chacha20poly1305",
+ "hex",
+ "rand 0.8.5",
+ "rand_core 0.9.3",
+ "serde",
+ "thiserror 2.0.17",
+ "x25519-dalek",
+ "zelana-keypair",
+]
+
+[[package]]
 name = "zelana-pubkey"
 version = "0.1.0"
 dependencies = [
@@ -8213,6 +8236,19 @@ dependencies = [
  "serde",
  "serde_bytes",
  "wincode",
+]
+
+[[package]]
+name = "zelana-threshold"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "chacha20poly1305",
+ "hex",
+ "rand 0.8.5",
+ "serde",
+ "thiserror 2.0.17",
+ "x25519-dalek",
 ]
 
 [[package]]

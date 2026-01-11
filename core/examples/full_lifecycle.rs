@@ -45,23 +45,28 @@ async fn main() -> anyhow::Result<()> {
 
     // 3. DEPOSIT to L2
     println!("🚀 Depositing 1 SOL to Bridge...");
-    
+
     // Derive PDAs - matching working example exactly
     let mut domain_padded = [0u8; 32];
     domain_padded[..DOMAIN.len()].copy_from_slice(DOMAIN);
-    
+
     let (config_pda, _) = Pubkey::find_program_address(&[b"config", &domain_padded], &program_id);
     let (vault_pda, _) = Pubkey::find_program_address(&[b"vault", &domain_padded], &program_id);
 
     let nonce: u64 = 500;
     let (receipt_pda, _) = Pubkey::find_program_address(
-        &[b"receipt", &domain_padded, user.pubkey().as_ref(), &nonce.to_le_bytes()],
+        &[
+            b"receipt",
+            &domain_padded,
+            user.pubkey().as_ref(),
+            &nonce.to_le_bytes(),
+        ],
         &program_id,
     );
 
     let amount = 1_000_000_000;
     let params = DepositParams { amount, nonce };
-    
+
     // Use wincode serialization like the working example
     let mut data = vec![1];
     data.extend(wincode::serialize(&params)?);

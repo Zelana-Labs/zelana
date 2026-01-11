@@ -1,9 +1,10 @@
 use serde::{Deserialize, Serialize};
 use wincode::{SchemaRead, SchemaWrite};
 
-#[derive(Clone, Copy, PartialEq,Debug, Eq, Hash, SchemaRead, SchemaWrite,Serialize,Deserialize)]
+#[derive(
+    Clone, Copy, PartialEq, Debug, Eq, Hash, SchemaRead, SchemaWrite, Serialize, Deserialize,
+)]
 pub struct Signature(pub [u8; 32]);
-
 
 impl Signature {
     pub const LEN: usize = 32;

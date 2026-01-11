@@ -1,6 +1,8 @@
 use crate::storage::StateStore;
 use anyhow::{Result, bail};
-use zelana_transaction::{DepositEvent, PrivateTransaction, SignedTransaction, TransactionType, WithdrawRequest};
+use zelana_transaction::{
+    DepositEvent, PrivateTransaction, SignedTransaction, TransactionType, WithdrawRequest,
+};
 
 pub struct BatchExecutor<'a, S: StateStore> {
     store: &'a mut S,
@@ -20,18 +22,18 @@ impl<'a, S: StateStore> BatchExecutor<'a, S> {
         }
     }
 
-    fn execute_shielded(&mut self,tx: &PrivateTransaction) ->Result<()>{
-        // 1. Verify Proof 
+    fn execute_shielded(&mut self, tx: &PrivateTransaction) -> Result<()> {
+        // 1. Verify Proof
         //  we would verify the Groth16 proof here.
 
         // 2. Commitments (Merkle Tree Update)
         //  state change for a shielded tx is adding the *New Note* // to the global Merkle Tree so it can be spent later.
-        
+
         // TODO: Update StateStore to support `add_commitment`
         // self.store.add_commitment(tx.commitment)?;
         println!(
-            " Executed Shielded Tx. Nullifier: {:?}, New Commitment: {:?}", 
-            hex::encode(tx.nullifier), 
+            " Executed Shielded Tx. Nullifier: {:?}, New Commitment: {:?}",
+            hex::encode(tx.nullifier),
             hex::encode(tx.commitment)
         );
 

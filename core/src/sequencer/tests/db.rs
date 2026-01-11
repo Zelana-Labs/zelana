@@ -1,9 +1,9 @@
 use tempfile::TempDir;
 
+use crate::sequencer::db::RocksDbStore;
+use crate::storage::state::StateStore;
 use zelana_account::{AccountId, AccountState};
 use zelana_block::{BlockHeader, HEADER_MAGIC, HEADER_VERSION};
-use crate::storage::state::StateStore;
-use crate::sequencer::db::RocksDbStore;
 
 /// Create a temporary DB for each test
 fn temp_db() -> RocksDbStore {
@@ -50,13 +50,19 @@ fn account_state_overwrite_works() {
 
     db.set_account_state(
         id,
-        AccountState { balance: 10, nonce: 0 },
+        AccountState {
+            balance: 10,
+            nonce: 0,
+        },
     )
     .unwrap();
 
     db.set_account_state(
         id,
-        AccountState { balance: 50, nonce: 1 },
+        AccountState {
+            balance: 50,
+            nonce: 1,
+        },
     )
     .unwrap();
 

@@ -44,14 +44,14 @@ pub fn format_balance_with_separators(balance: u64) -> String {
     let balance_str = balance.to_string();
     let mut result = String::new();
     let len = balance_str.len();
-    
+
     for (i, c) in balance_str.chars().enumerate() {
         if i > 0 && (len - i) % 3 == 0 {
             result.push('.');
         }
         result.push(c);
     }
-    
+
     result
 }
 
@@ -174,7 +174,8 @@ impl App {
                     if let Some(area) = self.transactions_area {
                         let visible_height = area.height.saturating_sub(3) as usize;
                         if self.transactions_scroll >= self.transactions_offset + visible_height {
-                            self.transactions_offset = self.transactions_scroll - visible_height + 1;
+                            self.transactions_offset =
+                                self.transactions_scroll - visible_height + 1;
                         }
                     }
                 }
@@ -200,7 +201,7 @@ impl App {
 
     pub fn apply_search(&mut self) {
         let query = self.search_query.to_lowercase();
-        
+
         if query.is_empty() {
             self.filtered_accounts.clear();
             self.filtered_transactions.clear();
@@ -309,7 +310,7 @@ impl App {
                     self.status_message = "Copied to clipboard (xclip)".to_string();
                     return;
                 }
-                
+
                 // Try xsel as fallback
                 if let Ok(_) = Command::new("xsel")
                     .arg("--clipboard")
@@ -327,10 +328,13 @@ impl App {
                     self.status_message = "Copied to clipboard (xsel)".to_string();
                     return;
                 }
-                
-                self.status_message = format!("Install xclip or xsel. Text: {}", &text[..text.len().min(20)]);
+
+                self.status_message = format!(
+                    "Install xclip or xsel. Text: {}",
+                    &text[..text.len().min(20)]
+                );
             }
-            
+
             #[cfg(target_os = "macos")]
             {
                 use std::process::Command;
@@ -350,7 +354,7 @@ impl App {
                     self.status_message = "Failed to copy".to_string();
                 }
             }
-            
+
             #[cfg(target_os = "windows")]
             {
                 use std::process::Command;
@@ -378,7 +382,11 @@ impl App {
     pub fn handle_mouse_click(&mut self, x: u16, y: u16) {
         // Check if click is in accounts area
         if let Some(area) = self.accounts_area {
-            if x > area.x && x < area.x + area.width - 1 && y > area.y + 1 && y < area.y + area.height - 1 {
+            if x > area.x
+                && x < area.x + area.width - 1
+                && y > area.y + 1
+                && y < area.y + area.height - 1
+            {
                 self.active_panel = Panel::Accounts;
                 // Calculate which item was clicked
                 // y - (area.y + 2) gives us the row index in the visible area
@@ -398,7 +406,11 @@ impl App {
 
         // Check if click is in transactions area
         if let Some(area) = self.transactions_area {
-            if x > area.x && x < area.x + area.width - 1 && y > area.y + 1 && y < area.y + area.height - 1 {
+            if x > area.x
+                && x < area.x + area.width - 1
+                && y > area.y + 1
+                && y < area.y + area.height - 1
+            {
                 self.active_panel = Panel::Transactions;
                 let clicked_row = (y.saturating_sub(area.y + 2)) as usize;
                 let actual_index = clicked_row + self.transactions_offset;
@@ -416,7 +428,11 @@ impl App {
 
         // Check if click is in nullifiers area
         if let Some(area) = self.nullifiers_area {
-            if x > area.x && x < area.x + area.width - 1 && y > area.y + 1 && y < area.y + area.height - 1 {
+            if x > area.x
+                && x < area.x + area.width - 1
+                && y > area.y + 1
+                && y < area.y + area.height - 1
+            {
                 self.active_panel = Panel::Nullifiers;
                 let clicked_row = (y.saturating_sub(area.y + 2)) as usize;
                 let actual_index = clicked_row + self.nullifiers_offset;
@@ -435,7 +451,7 @@ impl App {
 
     pub fn load_data(&mut self, db_path: &str) -> Result<()> {
         let (accounts, transactions, nullifiers) = db::load_database(db_path)?;
-        
+
         self.accounts = accounts;
         self.transactions = transactions;
         self.nullifiers = nullifiers;

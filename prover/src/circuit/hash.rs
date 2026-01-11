@@ -3,8 +3,7 @@ use ark_r1cs_std::fields::fp::FpVar;
 use ark_relations::r1cs::{ConstraintSystemRef, SynthesisError};
 
 use ark_crypto_primitives::sponge::{
-    poseidon::constraints::PoseidonSpongeVar,
-    constraints::CryptographicSpongeVar,
+    constraints::CryptographicSpongeVar, poseidon::constraints::PoseidonSpongeVar,
 };
 
 use super::poseidon::poseidon_config;

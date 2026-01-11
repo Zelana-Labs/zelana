@@ -1,5 +1,5 @@
-use crossterm::event::{self, Event, KeyCode};
 use anyhow::Result;
+use crossterm::event::{self, Event, KeyCode};
 
 use crate::app::{App, Mode};
 

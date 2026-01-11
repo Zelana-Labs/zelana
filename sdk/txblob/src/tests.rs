@@ -1,11 +1,11 @@
 #[cfg(test)]
 mod tests {
     use super::*;
-    use x25519_dalek::{StaticSecret, PublicKey};
-    use zelana_transaction::{SignedTransaction, TransactionData};
     use chacha20poly1305::aead::rand_core::OsRng;
-  
-    use crate::{encrypt_signed_tx,decrypt_signed_tx};
+    use x25519_dalek::{PublicKey, StaticSecret};
+    use zelana_transaction::{SignedTransaction, TransactionData};
+
+    use crate::{decrypt_signed_tx, encrypt_signed_tx};
     fn dummy_tx() -> SignedTransaction {
         SignedTransaction {
             data: TransactionData::default(),
@@ -24,19 +24,10 @@ mod tests {
 
         let tx = dummy_tx();
 
-        let blob = encrypt_signed_tx(
-            &tx,
-            &tx.signer_pubkey,
-            &client_secret,
-            &sequencer_pub,
-            0,
-        ).unwrap();
+        let blob =
+            encrypt_signed_tx(&tx, &tx.signer_pubkey, &client_secret, &sequencer_pub, 0).unwrap();
 
-        let recovered = decrypt_signed_tx(
-            &blob,
-            &sequencer_secret,
-            &client_pub,
-        ).unwrap();
+        let recovered = decrypt_signed_tx(&blob, &sequencer_secret, &client_pub).unwrap();
         assert_eq!(
             wincode::serialize(&tx).unwrap(),
             wincode::serialize(&recovered).unwrap()
@@ -53,13 +44,8 @@ mod tests {
 
         let tx = dummy_tx();
 
-        let mut blob = encrypt_signed_tx(
-            &tx,
-            &tx.signer_pubkey,
-            &client_secret,
-            &sequencer_pub,
-            0,
-        ).unwrap();
+        let mut blob =
+            encrypt_signed_tx(&tx, &tx.signer_pubkey, &client_secret, &sequencer_pub, 0).unwrap();
 
         blob.flags = 1; // tamper
 

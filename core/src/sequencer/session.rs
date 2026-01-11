@@ -12,12 +12,12 @@ use zelana_block::{BlockHeader, HEADER_MAGIC, HEADER_VERSION};
 use crate::sequencer::executor::ExecutionResult;
 
 #[derive(Clone)]
-pub struct Session{
+pub struct Session {
     pub batch_id: u64,
     pub txs: Vec<ExecutionResult>,
 }
 
-impl Session{
+impl Session {
     pub fn new(batch_id: u64) -> Self {
         Self {
             batch_id,
@@ -33,7 +33,6 @@ impl Session{
     }
 
     pub fn close(self, prev_root: [u8; 32], new_root: [u8; 32]) -> ClosedSession {
-
         let header = BlockHeader {
             magic: HEADER_MAGIC,
             hdr_version: HEADER_VERSION,
@@ -47,7 +46,7 @@ impl Session{
 
         ClosedSession {
             header,
-            txs:self.txs
+            txs: self.txs,
         }
     }
 }
@@ -58,10 +57,7 @@ pub struct ClosedSession {
     pub txs: Vec<ExecutionResult>,
 }
 
-
-pub fn compute_state_root(
-    base_state: &HashMap<AccountId, AccountState>,
-) -> [u8; 32] {
+pub fn compute_state_root(base_state: &HashMap<AccountId, AccountState>) -> [u8; 32] {
     let mut items: Vec<_> = base_state.iter().collect();
     items.sort_by_key(|(id, _)| id.to_hex());
 

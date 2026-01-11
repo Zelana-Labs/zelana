@@ -1,9 +1,9 @@
-use serde::{Serialize, Deserialize};
-use sha2::{Sha256, Digest};
-use wincode::{SchemaRead,SchemaWrite,serialize,deserialize};
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
+use wincode::{SchemaRead, SchemaWrite, serialize};
 pub const TX_BLOB_VERSION_V1: u8 = 1;
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq,SchemaRead,SchemaWrite)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, SchemaRead, SchemaWrite)]
 pub struct EncryptedTxBlobV1 {
     pub version: u8,
     pub flags: u8,
@@ -14,8 +14,7 @@ pub struct EncryptedTxBlobV1 {
 }
 
 pub fn tx_blob_hash(blob: &EncryptedTxBlobV1) -> [u8; 32] {
-    let bytes = serialize(blob)
-        .expect("tx blob serialization failed");
+    let bytes = serialize(blob).expect("tx blob serialization failed");
     let mut hasher = Sha256::new();
     hasher.update(bytes);
     hasher.finalize().into()

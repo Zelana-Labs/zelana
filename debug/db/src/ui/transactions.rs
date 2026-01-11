@@ -9,7 +9,7 @@ use crate::theme::*;
 
 pub fn render_transactions(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
     let is_active = app.active_panel == Panel::Transactions;
-    
+
     let items_to_show: Vec<(usize, &(String, _))> = if app.search_query.is_empty() {
         app.transactions.iter().enumerate().collect()
     } else {
@@ -52,19 +52,31 @@ pub fn render_transactions(f: &mut Frame, app: &App, area: ratatui::layout::Rect
                 id.clone()
             } else if id_width > 10 {
                 let half = (id_width - 2) / 2;
-                format!("{}..{}", &id[..half], &id[id.len()-(id_width - half - 2)..])
+                format!(
+                    "{}..{}",
+                    &id[..half],
+                    &id[id.len() - (id_width - half - 2)..]
+                )
             } else {
-                id.chars().take(id_width.saturating_sub(2)).collect::<String>() + ".."
+                id.chars()
+                    .take(id_width.saturating_sub(2))
+                    .collect::<String>()
+                    + ".."
             };
 
             let absolute_idx = visible_idx + app.transactions_offset;
-            let content = format!(" {} {:width$}  {}", 
-                if absolute_idx == app.transactions_scroll && is_active { "▸" } else { " " },
-                formatted_id, 
-                tx_type, 
+            let content = format!(
+                " {} {:width$}  {}",
+                if absolute_idx == app.transactions_scroll && is_active {
+                    "▸"
+                } else {
+                    " "
+                },
+                formatted_id,
+                tx_type,
                 width = id_width
             );
-            
+
             // Highlight based on absolute scroll position
             let style = if absolute_idx == app.transactions_scroll && is_active {
                 Style::default()
@@ -72,9 +84,7 @@ pub fn render_transactions(f: &mut Frame, app: &App, area: ratatui::layout::Rect
                     .bg(COLOR_PRIMARY)
                     .add_modifier(Modifier::BOLD)
             } else {
-                Style::default()
-                    .fg(tx_color)
-                    .bg(COLOR_BG)
+                Style::default().fg(tx_color).bg(COLOR_BG)
             };
 
             ListItem::new(content).style(style)
@@ -90,7 +100,11 @@ pub fn render_transactions(f: &mut Frame, app: &App, area: ratatui::layout::Rect
     let title = if app.search_query.is_empty() {
         format!(" Transactions ({}) ", app.transactions.len())
     } else {
-        format!(" Transactions ({}/{}) ", items_to_show.len(), app.transactions.len())
+        format!(
+            " Transactions ({}/{}) ",
+            items_to_show.len(),
+            app.transactions.len()
+        )
     };
 
     let list = List::new(items)

@@ -1,4 +1,5 @@
 mod airdrop;
+mod dev;
 
 use std::io::Write;
 use std::path::Path;
@@ -22,6 +23,38 @@ async fn main() {
     let cmd = &args[1];
 
     match cmd.as_str() {
+        "dev" => {
+            let config = parse_dev_args(&args[2..]);
+            if let Err(e) = dev::run_dev(config).await {
+                eprintln!("❌ Error running dev environment: {}", e);
+                std::process::exit(1);
+            }
+        }
+        "test" => {
+            let config = parse_test_args(&args[2..]);
+            if let Err(e) = dev::run_tests(config).await {
+                eprintln!("❌ Error running tests: {}", e);
+                std::process::exit(1);
+            }
+        }
+        "deploy" => {
+            let network = args.get(2).map(|s| s.as_str()).unwrap_or("devnet");
+            let keypair = args.get(3).map(|s| s.as_str());
+
+            // Handle --network flag
+            let (network, keypair) = if network == "--network" {
+                let net = args.get(3).map(|s| s.as_str()).unwrap_or("devnet");
+                let kp = args.get(4).map(|s| s.as_str());
+                (net, kp)
+            } else {
+                (network, keypair)
+            };
+
+            if let Err(e) = dev::deploy(network, keypair).await {
+                eprintln!("❌ Error deploying: {}", e);
+                std::process::exit(1);
+            }
+        }
         "genkey" => {
             let filename = args.get(2).cloned();
             if let Err(e) = genkey(filename) {
@@ -72,26 +105,126 @@ async fn main() {
 }
 
 fn print_usage() {
-    println!("Zelana CLI - L2 Bridge Tool");
+    println!("Zelana CLI - Privacy-First L2 Development Tool");
     println!();
     println!("USAGE:");
     println!("  zelana <command> [args]");
     println!();
-    println!("COMMANDS:");
-    println!("  genkey [filename]           Generate new Zelana keypair");
-    println!("  airdrop <amount> [filename] Request Solana airdrop and bridge to L2");
-    println!("  add <a> <b>                 Add two numbers (test command)");
-    println!("  help                        Show this help message");
+    println!("DEVELOPMENT COMMANDS:");
+    println!("  dev [options]              Start local sequencer + prover");
+    println!("  test [options]             Run integration tests");
+    println!("  deploy --network <net>     Deploy to network (devnet/mainnet/localnet)");
+    println!();
+    println!("ACCOUNT COMMANDS:");
+    println!("  genkey [filename]          Generate new Zelana keypair");
+    println!("  airdrop <amount> [file]    Request Solana airdrop and bridge to L2");
+    println!();
+    println!("OTHER COMMANDS:");
+    println!("  help                       Show this help message");
+    println!();
+    println!("DEV OPTIONS:");
+    println!("  --port <port>              Sequencer port (default: 8080)");
+    println!("  --no-prover                Disable prover");
+    println!("  --no-solana                Don't start local Solana validator");
+    println!("  --verbose                  Verbose logging");
+    println!();
+    println!("TEST OPTIONS:");
+    println!("  --unit                     Run only unit tests");
+    println!("  --integration              Run only integration tests");
+    println!("  --circuits                 Run only circuit tests");
+    println!("  --verbose                  Verbose output");
     println!();
     println!("EXAMPLES:");
-    println!("  zelana genkey");
-    println!("  zelana genkey test.json");
-    println!("  zelana airdrop 1300000000");
-    println!("  zelana airdrop 1000000000 test.json");
+    println!("  zelana dev                           # Start local dev environment");
+    println!("  zelana dev --port 9000               # Use custom port");
+    println!("  zelana test                          # Run all tests");
+    println!("  zelana test --integration            # Run only integration tests");
+    println!("  zelana deploy --network devnet       # Deploy to devnet");
+    println!("  zelana genkey                        # Generate keypair");
+    println!("  zelana airdrop 1000000000            # Airdrop and bridge");
     println!();
     println!("ENVIRONMENT VARIABLES:");
-    println!("  SOLANA_RPC_URL       - Solana RPC endpoint (default: http://127.0.0.1:8899)");
-    println!("  BRIDGE_PROGRAM_ID    - Bridge program ID (default: 9HXapBN9otLGnQNGv1HRk91DGqMNvMAvQqohL7gPW1sd)");
+    println!("  SOLANA_RPC_URL       Solana RPC endpoint");
+    println!("  ZELANA_DB_PATH       Database path for sequencer");
+    println!("  RUST_LOG             Log level (debug/info/warn/error)");
+}
+
+fn parse_dev_args(args: &[String]) -> dev::DevConfig {
+    let mut config = dev::DevConfig::default();
+
+    let mut i = 0;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--port" => {
+                if let Some(port_str) = args.get(i + 1) {
+                    if let Ok(port) = port_str.parse() {
+                        config.sequencer_port = port;
+                    }
+                    i += 1;
+                }
+            }
+            "--no-prover" => {
+                config.enable_prover = false;
+            }
+            "--no-solana" => {
+                config.mock_solana = false;
+            }
+            "--verbose" | "-v" => {
+                config.log_level = "debug".to_string();
+            }
+            "--db-path" => {
+                if let Some(path) = args.get(i + 1) {
+                    config.db_path = std::path::PathBuf::from(path);
+                    i += 1;
+                }
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+
+    config
+}
+
+fn parse_test_args(args: &[String]) -> dev::TestConfig {
+    let mut config = dev::TestConfig::default();
+    let mut any_specific = false;
+
+    for arg in args {
+        match arg.as_str() {
+            "--unit" => {
+                any_specific = true;
+                config.unit = true;
+            }
+            "--integration" => {
+                any_specific = true;
+                config.integration = true;
+            }
+            "--circuits" => {
+                any_specific = true;
+                config.circuits = true;
+            }
+            "--verbose" | "-v" => {
+                config.verbose = true;
+            }
+            _ => {}
+        }
+    }
+
+    // If specific tests were requested, disable others
+    if any_specific {
+        if !args.iter().any(|a| a == "--unit") {
+            config.unit = false;
+        }
+        if !args.iter().any(|a| a == "--integration") {
+            config.integration = false;
+        }
+        if !args.iter().any(|a| a == "--circuits") {
+            config.circuits = false;
+        }
+    }
+
+    config
 }
 
 fn genkey(filename: Option<String>) -> anyhow::Result<()> {
@@ -180,7 +313,7 @@ async fn airdrop(amount: u64, filename: Option<String>) -> anyhow::Result<()> {
         let home = std::env::var("HOME")
             .or_else(|_| std::env::var("USERPROFILE"))
             .map_err(|_| anyhow::anyhow!("Could not determine home directory"))?;
-        
+
         Path::new(&home)
             .join(".config")
             .join("solana")

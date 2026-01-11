@@ -1,14 +1,14 @@
+use rocksdb::{ColumnFamily, WriteBatch};
 use serde::{Deserialize, Serialize};
 use wincode::{SchemaRead, SchemaWrite};
 use zelana_account::AccountId;
 use zelana_pubkey::Pubkey;
 use zelana_signature::Signature;
-use rocksdb::{ColumnFamily, WriteBatch};
 pub mod bridge;
-pub use bridge::{DepositEvent, DepositParams, WithdrawRequest, InitParams};
+pub use bridge::{DepositEvent, DepositParams, InitParams, WithdrawRequest};
 
 /// The enum for all inputs to the L2 State Machine.
-#[derive(Debug, Clone, SchemaRead, SchemaWrite,Serialize,Deserialize)]
+#[derive(Debug, Clone, SchemaRead, SchemaWrite, Serialize, Deserialize)]
 pub enum TransactionType {
     /// PRIVACY: An opaque shielded transaction (The Blob).
     /// Sender/Receiver are hidden. Validity is proven via ZK.
@@ -38,18 +38,18 @@ pub struct PrivateTransaction {
     pub ephemeral_key: [u8; 32],
 }
 /// The Wrapper Structure
-#[derive(Clone, Debug, SchemaWrite, SchemaRead,Serialize,Deserialize)]
+#[derive(Clone, Debug, SchemaWrite, SchemaRead, Serialize, Deserialize)]
 pub struct Transaction {
     /// For Shielded txs, this might be all zeros or a "Relayer" key.
-    pub sender: Pubkey, 
+    pub sender: Pubkey,
     pub tx_type: TransactionType,
-    /// Signature is used for Transparent txs. 
+    /// Signature is used for Transparent txs.
     /// For Shielded, the authentication is inside the ZK Proof.
-    pub signature: Signature, 
+    pub signature: Signature,
 }
 
 /// The payload a user signs.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, SchemaRead, SchemaWrite,Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, SchemaRead, SchemaWrite, Default)]
 pub struct TransactionData {
     pub from: AccountId,
     pub to: AccountId,
@@ -69,16 +69,10 @@ pub struct SignedTransaction {
     pub signer_pubkey: [u8; 32],
 }
 
-impl TransactionType{
-    pub fn apply_storage_effects(
-        &self,
-        batch: &mut WriteBatch,
-        cf_nullifiers: &ColumnFamily
-    ){
-        match self{
-            TransactionType::Shielded(blob)=>{
-
-
+impl TransactionType {
+    pub fn apply_storage_effects(&self, batch: &mut WriteBatch, cf_nullifiers: &ColumnFamily) {
+        match self {
+            TransactionType::Shielded(blob) => {
                 batch.put_cf(cf_nullifiers, &blob.nullifier, b"1");
             }
             _ => {}

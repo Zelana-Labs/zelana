@@ -9,7 +9,7 @@ use crate::theme::*;
 
 pub fn render_nullifiers(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
     let is_active = app.active_panel == Panel::Nullifiers;
-    
+
     let items_to_show: Vec<(usize, &String)> = if app.search_query.is_empty() {
         app.nullifiers.iter().enumerate().collect()
     } else {
@@ -34,19 +34,32 @@ pub fn render_nullifiers(f: &mut Frame, app: &App, area: ratatui::layout::Rect) 
         .enumerate()
         .map(|(visible_idx, (_original_idx, nullifier))| {
             let available_width = total_width.saturating_sub(4); // Space for indicator and padding
-            
+
             let formatted_nullifier = if nullifier.len() <= available_width {
                 nullifier.to_string()
             } else if available_width > 10 {
                 let half = (available_width - 2) / 2;
-                format!("{}..{}", &nullifier[..half], &nullifier[nullifier.len()-(available_width - half - 2)..])
+                format!(
+                    "{}..{}",
+                    &nullifier[..half],
+                    &nullifier[nullifier.len() - (available_width - half - 2)..]
+                )
             } else {
-                nullifier.chars().take(available_width.saturating_sub(2)).collect::<String>() + ".."
+                nullifier
+                    .chars()
+                    .take(available_width.saturating_sub(2))
+                    .collect::<String>()
+                    + ".."
             };
 
             let absolute_idx = visible_idx + app.nullifiers_offset;
-            let content = format!(" {} {}", 
-                if absolute_idx == app.nullifiers_scroll && is_active { "▸" } else { " " },
+            let content = format!(
+                " {} {}",
+                if absolute_idx == app.nullifiers_scroll && is_active {
+                    "▸"
+                } else {
+                    " "
+                },
                 formatted_nullifier
             );
 
@@ -57,9 +70,7 @@ pub fn render_nullifiers(f: &mut Frame, app: &App, area: ratatui::layout::Rect) 
                     .bg(COLOR_PRIMARY)
                     .add_modifier(Modifier::BOLD)
             } else {
-                Style::default()
-                    .fg(COLOR_TEXT)
-                    .bg(COLOR_BG)
+                Style::default().fg(COLOR_TEXT).bg(COLOR_BG)
             };
 
             ListItem::new(content).style(style)
@@ -75,7 +86,11 @@ pub fn render_nullifiers(f: &mut Frame, app: &App, area: ratatui::layout::Rect) 
     let title = if app.search_query.is_empty() {
         format!(" Nullifiers ({}) ", app.nullifiers.len())
     } else {
-        format!(" Nullifiers ({}/{}) ", items_to_show.len(), app.nullifiers.len())
+        format!(
+            " Nullifiers ({}/{}) ",
+            items_to_show.len(),
+            app.nullifiers.len()
+        )
     };
 
     let list = List::new(items)

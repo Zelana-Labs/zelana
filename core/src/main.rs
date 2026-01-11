@@ -7,7 +7,7 @@ use tokio::signal;
 use x25519_dalek::{PublicKey, StaticSecret};
 
 use crate::sequencer::db::RocksDbStore;
-use crate::sequencer::ingest::{state_ingest_server, start_indexer};
+use crate::sequencer::ingest::{start_indexer, state_ingest_server};
 use crate::sequencer::session::SessionManager;
 
 mod sequencer;
@@ -23,16 +23,15 @@ async fn main() -> Result<()> {
     // -----------------------------
     // Config
     // -----------------------------
-    let db_path = env::var("ZELANA_DB_PATH")
-        .unwrap_or_else(|_| "./zelana-db".to_string());
+    let db_path = env::var("ZELANA_DB_PATH").unwrap_or_else(|_| "./zelana-db".to_string());
 
     let ingest_port: u16 = env::var("ZELANA_INGEST_PORT")
         .unwrap_or_else(|_| "8080".to_string())
         .parse()
         .expect("invalid port");
 
-    let solana_ws = env::var("SOLANA_WS_URL")
-        .unwrap_or_else(|_| "wss://api.devnet.solana.com/".to_string());
+    let solana_ws =
+        env::var("SOLANA_WS_URL").unwrap_or_else(|_| "wss://api.devnet.solana.com/".to_string());
 
     let bridge_program_id = env::var("ZELANA_BRIDGE_PROGRAM")
         .unwrap_or_else(|_| "11111111111111111111111111111111".to_string());
@@ -45,11 +44,8 @@ async fn main() -> Result<()> {
     // -----------------------------
     // Database (single instance)
     // -----------------------------
-    let db = Arc::new(
-        RocksDbStore::open(&db_path)
-            .expect("failed to open RocksDB"),
-    );
-    
+    let db = Arc::new(RocksDbStore::open(&db_path).expect("failed to open RocksDB"));
+
     // -----------------------------
     // Sequencer secret
     // -----------------------------
@@ -68,12 +64,7 @@ async fn main() -> Result<()> {
         let secret = sequencer_secret.clone();
 
         tokio::spawn(async move {
-            state_ingest_server(
-                (*db_clone).clone(),
-                secret,
-                ingest_port,
-            )
-            .await;
+            state_ingest_server((*db_clone).clone(), secret, ingest_port).await;
         });
     }
 

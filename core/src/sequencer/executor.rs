@@ -1,11 +1,11 @@
+use super::db::RocksDbStore;
+use crate::sequencer::session::compute_state_root;
+use crate::storage::state::StateStore;
 use anyhow::{Result, bail};
 use log::{error, info};
-use zelana_account::{AccountId, AccountState};
-use zelana_transaction::{SignedTransaction, TransactionType,Transaction,TransactionData};
 use std::{collections::HashMap, sync::Arc};
-use super::db::RocksDbStore;
-use crate::storage::state::StateStore;
-use crate::sequencer::session::compute_state_root;
+use zelana_account::{AccountId, AccountState};
+use zelana_transaction::{SignedTransaction, Transaction, TransactionData, TransactionType};
 // use crate::storage::BatchExecutor;
 
 #[derive(Clone)]
@@ -13,7 +13,6 @@ pub struct Executor {
     db: Arc<RocksDbStore>,
     state: InMemoryState,
 }
-
 
 #[derive(Debug)]
 pub enum ExecutionError {
@@ -23,46 +22,39 @@ pub enum ExecutionError {
     InvalidTransaction,
 }
 
-
 #[derive(Debug, Clone)]
 pub struct StateDiff {
     /// Updated account states
     pub updates: HashMap<AccountId, AccountState>,
 }
 
-#[derive(Debug,Clone)]
+#[derive(Debug, Clone)]
 pub struct ExecutionResult {
     pub tx_hash: [u8; 32],
     pub state_diff: StateDiff,
 }
 
 //in memory State cache
-#[derive(Debug, Default,Clone)]
+#[derive(Debug, Default, Clone)]
 struct InMemoryState {
     accounts: HashMap<AccountId, AccountState>,
     touched: HashMap<AccountId, AccountState>,
 }
 
-
 impl InMemoryState {
-    fn load_account(
-        &mut self,
-        db: &RocksDbStore,
-        id: &AccountId,
-    ) -> Result<AccountState> {
+    fn load_account(&mut self, db: &RocksDbStore, id: &AccountId) -> Result<AccountState> {
         info!(
-    "CACHE LOOKUP: id={}, has_cached={}",
-    id.to_hex(),
-    
-    self.accounts.contains_key(id)
-    );
+            "CACHE LOOKUP: id={}, has_cached={}",
+            id.to_hex(),
+            self.accounts.contains_key(id)
+        );
 
         if let Some(st) = self.accounts.get(id) {
-        return Ok(st.clone());
-    }
+            return Ok(st.clone());
+        }
 
-    // Load from DB, but DO NOT cache
-    Ok(db.get_account_state(id).unwrap_or_default())
+        // Load from DB, but DO NOT cache
+        Ok(db.get_account_state(id).unwrap_or_default())
     }
 
     fn set_account(&mut self, id: AccountId, state: AccountState) {
@@ -77,8 +69,7 @@ impl InMemoryState {
     }
 }
 
-
-impl Executor{
+impl Executor {
     pub fn new(db: Arc<RocksDbStore>) -> Self {
         Self {
             db,
@@ -93,62 +84,58 @@ impl Executor{
     pub fn execute_signed_tx(
         &mut self,
         tx: SignedTransaction,
-        tx_hash: [u8;32]
-    )->Result<ExecutionResult,ExecutionError>{
+        tx_hash: [u8; 32],
+    ) -> Result<ExecutionResult, ExecutionError> {
         info!(
-        "EXEC CACHE DEBUG: accounts={}, touched={}",
-        self.state.accounts.len(),
-        self.state.touched.len()
-    );
+            "EXEC CACHE DEBUG: accounts={}, touched={}",
+            self.state.accounts.len(),
+            self.state.touched.len()
+        );
 
         let TransactionData {
-            to,
-            amount,
-            nonce,
-            ..
+            to, amount, nonce, ..
         } = tx.data;
 
         let from = AccountId(tx.signer_pubkey);
-        
+
         //load sender and receiver state
         let mut from_state = self
-    .state
-    .load_account(&self.db, &from)
-    .map_err(|_| ExecutionError::AccountNotFound)?;
+            .state
+            .load_account(&self.db, &from)
+            .map_err(|_| ExecutionError::AccountNotFound)?;
 
-if from == to {
-    // Self-transfer: only nonce changes
-    if from_state.balance < amount {
-        return Err(ExecutionError::InsufficientBalance);
-    }
-    if from_state.nonce != nonce {
-        return Err(ExecutionError::InvalidNonce);
-    }
+        if from == to {
+            // Self-transfer: only nonce changes
+            if from_state.balance < amount {
+                return Err(ExecutionError::InsufficientBalance);
+            }
+            if from_state.nonce != nonce {
+                return Err(ExecutionError::InvalidNonce);
+            }
 
-    from_state.nonce += 1;
+            from_state.nonce += 1;
 
-    self.state.set_account(from, from_state);
-} else {
-    let mut to_state = self
-        .state
-        .load_account(&self.db, &to)
-        .map_err(|_| ExecutionError::AccountNotFound)?;
+            self.state.set_account(from, from_state);
+        } else {
+            let mut to_state = self
+                .state
+                .load_account(&self.db, &to)
+                .map_err(|_| ExecutionError::AccountNotFound)?;
 
-    if from_state.balance < amount {
-        return Err(ExecutionError::InsufficientBalance);
-    }
-    if from_state.nonce != nonce {
-        return Err(ExecutionError::InvalidNonce);
-    }
+            if from_state.balance < amount {
+                return Err(ExecutionError::InsufficientBalance);
+            }
+            if from_state.nonce != nonce {
+                return Err(ExecutionError::InvalidNonce);
+            }
 
-    from_state.balance -= amount;
-    from_state.nonce += 1;
-    to_state.balance += amount;
+            from_state.balance -= amount;
+            from_state.nonce += 1;
+            to_state.balance += amount;
 
-    self.state.set_account(from, from_state);
-    self.state.set_account(to, to_state);
-}
-
+            self.state.set_account(from, from_state);
+            self.state.set_account(to, to_state);
+        }
 
         Ok(ExecutionResult {
             tx_hash,
@@ -180,8 +167,6 @@ if from == to {
 //     pub db: RocksDbStore,
 // }
 
-
-
 // impl TransactionExecutor {
 //     pub fn new(db_path: &str) -> Result<Self> {
 //         let db = RocksDbStore::open(db_path)?;
@@ -199,11 +184,10 @@ if from == to {
 
 //         //wrap as TransactionType
 //         let l2_tx = Transaction {
-//         sender: tx.data., 
+//         sender: tx.data.,
 //         tx_type: TransactionType::Transfer(tx),
 //         signature: tx.signature.clone(),
 //     };
-
 
 //         match executor.execute(&l2_tx) {
 //             Ok(_) => {

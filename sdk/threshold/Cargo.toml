@@ -1,0 +1,21 @@
+[package]
+name = "zelana-threshold"
+version = { workspace = true }
+edition = { workspace = true }
+description = "Threshold encryption for MEV-resistant encrypted mempool"
+
+[dependencies]
+# Encryption
+chacha20poly1305 = { workspace = true }
+x25519-dalek = { workspace = true }
+
+# Hashing
+blake3 = { workspace = true }
+
+# Standard deps
+rand = "0.8"
+serde = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+hex = "0.4"

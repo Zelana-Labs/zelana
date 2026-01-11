@@ -1,7 +1,7 @@
-use x25519_dalek::{StaticSecret, PublicKey};
-use txblob::{encrypt_signed_tx, decrypt_signed_tx};
-use zelana_transaction::{SignedTransaction, TransactionData};
+use txblob::{decrypt_signed_tx, encrypt_signed_tx};
+use x25519_dalek::{PublicKey, StaticSecret};
 use zelana_account::AccountId;
+use zelana_transaction::{SignedTransaction, TransactionData};
 
 fn dummy_signed_tx() -> SignedTransaction {
     SignedTransaction {
@@ -16,7 +16,6 @@ fn dummy_signed_tx() -> SignedTransaction {
         signer_pubkey: [1u8; 32],
     }
 }
-
 
 #[test]
 fn encrypt_decrypt_roundtrip() {
@@ -37,12 +36,8 @@ fn encrypt_decrypt_roundtrip() {
     )
     .expect("encryption failed");
 
-    let decrypted = decrypt_signed_tx(
-        &blob,
-        &sequencer_secret,
-        &client_pub,
-    )
-    .expect("decryption failed");
+    let decrypted =
+        decrypt_signed_tx(&blob, &sequencer_secret, &client_pub).expect("decryption failed");
 
     assert_eq!(tx.data, decrypted.data);
     assert_eq!(tx.signature, decrypted.signature);

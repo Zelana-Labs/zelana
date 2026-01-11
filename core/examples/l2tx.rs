@@ -2,7 +2,12 @@ use std::{env, str::FromStr};
 
 use solana_client::rpc_client::RpcClient;
 use solana_commitment_config::CommitmentConfig;
-use solana_sdk::{message::{AccountMeta, Instruction}, pubkey::Pubkey, signer::Signer, transaction::Transaction};
+use solana_sdk::{
+    message::{AccountMeta, Instruction},
+    pubkey::Pubkey,
+    signer::Signer,
+    transaction::Transaction,
+};
 use tokio::time::Duration;
 use zelana_keypair::Keypair;
 use zelana_transaction::{DepositParams, TransactionData};
@@ -74,7 +79,12 @@ async fn deposit_to_l2(
     let (config_pda, _) = Pubkey::find_program_address(&[b"config", &domain_padded], program_id);
     let (vault_pda, _) = Pubkey::find_program_address(&[b"vault", &domain_padded], program_id);
     let (receipt_pda, _) = Pubkey::find_program_address(
-        &[b"receipt", &domain_padded, user_solkey.pubkey().as_ref(), &nonce.to_le_bytes()],
+        &[
+            b"receipt",
+            &domain_padded,
+            user_solkey.pubkey().as_ref(),
+            &nonce.to_le_bytes(),
+        ],
         program_id,
     );
 

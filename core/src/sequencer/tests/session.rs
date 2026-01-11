@@ -3,11 +3,8 @@ use std::collections::HashMap;
 use zelana_account::{AccountId, AccountState};
 use zelana_block::{HEADER_MAGIC, HEADER_VERSION};
 
-use crate::sequencer::session::{
-    Session,
-    compute_state_root,
-};
 use crate::sequencer::executor::{ExecutionResult, StateDiff};
+use crate::sequencer::session::{Session, compute_state_root};
 
 fn account(id: u8) -> AccountId {
     let mut b = [0u8; 32];
@@ -15,10 +12,7 @@ fn account(id: u8) -> AccountId {
     AccountId(b)
 }
 
-fn exec_result(
-    tx_hash: u8,
-    updates: Vec<(AccountId, AccountState)>,
-) -> ExecutionResult {
+fn exec_result(tx_hash: u8, updates: Vec<(AccountId, AccountState)>) -> ExecutionResult {
     let mut map = HashMap::new();
     for (id, st) in updates {
         map.insert(id, st);
@@ -38,16 +32,27 @@ fn push_merges_state_diffs() {
 
     session.push_execution(exec_result(
         1,
-        vec![(a, AccountState { balance: 50, nonce: 0 })],
+        vec![(
+            a,
+            AccountState {
+                balance: 50,
+                nonce: 0,
+            },
+        )],
     ));
 
     session.push_execution(exec_result(
         2,
-        vec![(b, AccountState { balance: 30, nonce: 0 })],
+        vec![(
+            b,
+            AccountState {
+                balance: 30,
+                nonce: 0,
+            },
+        )],
     ));
 
     assert_eq!(session.tx_count(), 2);
-
 }
 
 #[test]
@@ -57,16 +62,27 @@ fn later_state_overwrites_earlier_state() {
 
     session.push_execution(exec_result(
         1,
-        vec![(a, AccountState { balance: 100, nonce: 0 })],
+        vec![(
+            a,
+            AccountState {
+                balance: 100,
+                nonce: 0,
+            },
+        )],
     ));
 
     session.push_execution(exec_result(
         2,
-        vec![(a, AccountState { balance: 80, nonce: 1 })],
+        vec![(
+            a,
+            AccountState {
+                balance: 80,
+                nonce: 1,
+            },
+        )],
     ));
 
     assert_eq!(session.tx_count(), 2);
-
 }
 
 #[test]
@@ -76,12 +92,18 @@ fn close_produces_correct_block_header() {
 
     session.push_execution(exec_result(
         1,
-        vec![(a, AccountState { balance: 10, nonce: 0 })],
+        vec![(
+            a,
+            AccountState {
+                balance: 10,
+                nonce: 0,
+            },
+        )],
     ));
 
     let prev_root = [9u8; 32];
     let new_root = [9u8; 32];
-    let closed = session.close(prev_root,new_root);
+    let closed = session.close(prev_root, new_root);
 
     let header = closed.header;
 
@@ -98,12 +120,36 @@ fn compute_state_root_is_deterministic() {
     let b = account(2);
 
     let mut map1 = HashMap::new();
-    map1.insert(a, AccountState { balance: 5, nonce: 0 });
-    map1.insert(b, AccountState { balance: 7, nonce: 1 });
+    map1.insert(
+        a,
+        AccountState {
+            balance: 5,
+            nonce: 0,
+        },
+    );
+    map1.insert(
+        b,
+        AccountState {
+            balance: 7,
+            nonce: 1,
+        },
+    );
 
     let mut map2 = HashMap::new();
-    map2.insert(b, AccountState { balance: 7, nonce: 1 });
-    map2.insert(a, AccountState { balance: 5, nonce: 0 });
+    map2.insert(
+        b,
+        AccountState {
+            balance: 7,
+            nonce: 1,
+        },
+    );
+    map2.insert(
+        a,
+        AccountState {
+            balance: 5,
+            nonce: 0,
+        },
+    );
 
     let r1 = compute_state_root(&map1);
     let r2 = compute_state_root(&map2);

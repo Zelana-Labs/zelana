@@ -21,7 +21,7 @@ async fn main() -> anyhow::Result<()> {
 
     let payer = Keypair::new();
     let sequencer = Keypair::new();
-    
+
     let rpc = RpcClient::new_with_commitment(rpc_url.to_string(), CommitmentConfig::confirmed());
 
     // Airdrop
@@ -33,7 +33,7 @@ async fn main() -> anyhow::Result<()> {
     // Derive PDAs
     let mut domain_padded = [0u8; 32];
     domain_padded[..DOMAIN.len()].copy_from_slice(DOMAIN);
-    
+
     let (config_pda, _) = Pubkey::find_program_address(&[b"config", &domain_padded], &program_id);
     let (vault_pda, _) = Pubkey::find_program_address(&[b"vault", &domain_padded], &program_id);
     let system_id = Pubkey::from_str("11111111111111111111111111111111")?;
@@ -73,11 +73,19 @@ async fn main() -> anyhow::Result<()> {
     // Deposit
     let nonce: u64 = 101;
     let (receipt_pda, _) = Pubkey::find_program_address(
-        &[b"receipt", &domain_padded, payer.pubkey().as_ref(), &nonce.to_le_bytes()],
+        &[
+            b"receipt",
+            &domain_padded,
+            payer.pubkey().as_ref(),
+            &nonce.to_le_bytes(),
+        ],
         &program_id,
     );
 
-    let params = DepositParams { amount: 1_000_000_000, nonce };
+    let params = DepositParams {
+        amount: 1_000_000_000,
+        nonce,
+    };
     let mut deposit_data = vec![1];
     deposit_data.extend(wincode::serialize(&params)?);
 

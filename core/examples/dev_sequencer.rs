@@ -2,11 +2,11 @@ use anyhow::Result;
 use log::info;
 use std::path::PathBuf;
 
-use x25519_dalek::{StaticSecret, PublicKey};
-use core::storage::StateStore;
-use zelana_account::{AccountId, AccountState};
-use core::sequencer::ingest::state_ingest_server;
 use core::sequencer::db::RocksDbStore;
+use core::sequencer::ingest::state_ingest_server;
+use core::storage::StateStore;
+use x25519_dalek::{PublicKey, StaticSecret};
+use zelana_account::{AccountId, AccountState};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -27,18 +27,17 @@ async fn main() -> Result<()> {
     let sequencer_secret = StaticSecret::from([42u8; 32]);
     let sequencer_pub = PublicKey::from(&sequencer_secret);
 
-    info!(
-        "DEV SEQUENCER pubkey: {:?}",
-        sequencer_pub.to_bytes()
-    );
+    info!("DEV SEQUENCER pubkey: {:?}", sequencer_pub.to_bytes());
 
     // --------------------------------
     // Pre-funded dev account
     // MUST match client wallet
     // --------------------------------
-    let dev_account = AccountId(hex::decode(
-        "ea4a6c63e29c520abef5507b132ec5f9954776aebebe7b92421eea691446d211"
-    )?.try_into().unwrap());
+    let dev_account = AccountId(
+        hex::decode("ea4a6c63e29c520abef5507b132ec5f9954776aebebe7b92421eea691446d211")?
+            .try_into()
+            .unwrap(),
+    );
 
     db.set_account_state(
         dev_account,
@@ -48,10 +47,7 @@ async fn main() -> Result<()> {
         },
     )?;
 
-    info!(
-        "Pre-funded account {} with 1000",
-        dev_account.to_hex()
-    );
+    info!("Pre-funded account {} with 1000", dev_account.to_hex());
 
     // --------------------------------
     // Start ingest server
@@ -59,12 +55,7 @@ async fn main() -> Result<()> {
     let port = 8080;
     info!("Starting ingest server on {}", port);
 
-    state_ingest_server(
-        db,
-        sequencer_secret,
-        port,
-    )
-    .await;
+    state_ingest_server(db, sequencer_secret, port).await;
 
     Ok(())
 }

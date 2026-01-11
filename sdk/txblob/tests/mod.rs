@@ -1,3 +1,3 @@
+mod hash;
 mod roundtrip;
 mod tamper;
-mod hash;

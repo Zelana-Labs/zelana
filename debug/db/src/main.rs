@@ -6,12 +6,9 @@ use anyhow::Result;
 use crossterm::{
     event::{DisableMouseCapture, EnableMouseCapture},
     execute,
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+    terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
-use ratatui::{
-    backend::CrosstermBackend,
-    Terminal,
-};
+use ratatui::{Terminal, backend::CrosstermBackend};
 
 mod app;
 mod db;
@@ -60,14 +57,16 @@ async fn run_app<B: ratatui::backend::Backend>(
     terminal: &mut Terminal<B>,
     app: &mut App,
     db_path: &str,
-) -> Result<()> 
+) -> Result<()>
 where
     B::Error: std::error::Error + Send + Sync + 'static,
 {
     let mut last_update = tokio::time::Instant::now();
 
     loop {
-        terminal.draw(|f| render_ui(f, app)).map_err(|e| anyhow::anyhow!("Draw error: {}", e))?;
+        terminal
+            .draw(|f| render_ui(f, app))
+            .map_err(|e| anyhow::anyhow!("Draw error: {}", e))?;
 
         // Refresh data every 500ms
         if last_update.elapsed() >= Duration::from_millis(500) {
