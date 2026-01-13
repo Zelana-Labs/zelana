@@ -31,6 +31,7 @@ zelana-privacy     = { path = "sdk/privacy" }
 zelana-threshold   = { path = "sdk/threshold" }
 zephyr             = { path = "sdk/zephyr" }
 txblob = { path = "sdk/txblob" }
+prover             = { path = "prover" }
 
 # --- external deps ---
 rocksdb = "0.24.0"

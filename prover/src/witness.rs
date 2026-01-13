@@ -1,8 +1,8 @@
-use ark_bls12_381::Fr;
+use ark_bn254::Fr;
 
-use crate::merkle::MerklePathWitness;
+use crate::circuit::merkle::MerklePathWitness;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct AccountWitness {
     /// Public key committed as a field element
     pub pubkey: Fr,
@@ -11,7 +11,7 @@ pub struct AccountWitness {
     pub merkle_path: MerklePathWitness,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct WitnessTx {
     /// Whether this tx is real or padding
     pub enabled: bool,

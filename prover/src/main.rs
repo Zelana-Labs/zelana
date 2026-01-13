@@ -1,9 +1,11 @@
 // Copyright 2025 Zelana Labs
 // Licensed under the Apache License, Version 2.0
+mod circuit;
 mod constants;
 mod l2_circuit;
 mod prover_inputs;
 mod witness;
+mod witness_builder;
 use std::str::FromStr;
 
 use anyhow::{Context, Result};
@@ -47,6 +49,13 @@ use zelana_block::BlockHeader;
 use zelana_pubkey::Pubkey;
 use zelana_signature::Signature;
 use zelana_transaction::{Transaction, TransactionType};
+
+// Account struct for deserializing from RocksDB
+#[derive(Clone, Debug, serde::Deserialize)]
+pub struct Account {
+    pub balance: u64,
+    pub nonce: u64,
+}
 
 // Get this Pubkey from where you deployed your onchain_verifier program
 const ONCHAIN_VERIFIER_PROGRAM_ID: &str = "6qPEb6x1oGhd2pf1UP3bgMWa7NspSNryzrA6ZCdsbFwT"; // Replace if different
@@ -234,11 +243,11 @@ async fn find_and_process_pending_batch(
     let transactions_witness: Vec<TransactionWitness> = transactions
         .iter()
         .filter_map(|tx| {
-            if let TransactionType::Transfer { amount } = tx.tx_type {
+            if let TransactionType::Transfer(signed_tx) = &tx.tx_type {
                 Some(TransactionWitness {
-                    sender_pk: tx.sender.0,
-                    recipient_pk: tx.recipient.0,
-                    amount,
+                    sender_pk: signed_tx.data.from.0,
+                    recipient_pk: signed_tx.data.to.0,
+                    amount: signed_tx.data.amount,
                 })
             } else {
                 None
@@ -447,13 +456,14 @@ fn calculate_pre_state(
 
     // Reverse transactions (order matters if nonces were involved)
     for tx in transactions.iter().rev() {
-        if let TransactionType::Transfer { amount } = tx.tx_type {
+        if let TransactionType::Transfer(signed_tx) = &tx.tx_type {
+            let amount = signed_tx.data.amount;
             // Add back to sender
-            if let Some(bal) = pre_state_balances.get_mut(&tx.sender.0) {
+            if let Some(bal) = pre_state_balances.get_mut(&signed_tx.data.from.0) {
                 *bal += amount;
             }
             // Subtract from recipient (handle potential creation)
-            if let Some(bal) = pre_state_balances.get_mut(&tx.recipient.0) {
+            if let Some(bal) = pre_state_balances.get_mut(&signed_tx.data.to.0) {
                 // If the subtraction results in 0 and the account *only* existed
                 // because of this batch, a real prover would need more info to remove it.
                 // For the demo, just subtract.

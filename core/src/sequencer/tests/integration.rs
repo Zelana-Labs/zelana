@@ -92,6 +92,10 @@ fn encrypted_tx_executes_and_updates_state() {
     // --- Execute ---
     let mut executor = Executor::new(db.clone().into());
     let exec_result = executor.execute_signed_tx(decrypted, tx_hash).unwrap();
+    println!("{:?}", exec_result);
+
+    // --- Apply state diff to persist changes ---
+    executor.apply_state_diff().unwrap();
 
     // --- Batch in session ---
     let mut session = Session::new(1);
@@ -108,7 +112,7 @@ fn encrypted_tx_executes_and_updates_state() {
     // --- Assertions ---
     let from_state = db.get_account_state(&from).unwrap();
     let to_state = db.get_account_state(&to).unwrap();
-
+    println!("{:?}", from_state);
     assert_eq!(from_state.balance, 75);
     assert_eq!(from_state.nonce, 1);
 

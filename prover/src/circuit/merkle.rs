@@ -1,10 +1,30 @@
-use crate::{circuit::hash::hash2, merkle::MerklePathWitness};
-use ark_bls12_381::Fr;
+use crate::circuit::hash::hash2;
+use ark_bn254::Fr;
 use ark_r1cs_std::alloc::AllocVar;
 use ark_r1cs_std::eq::EqGadget;
 use ark_r1cs_std::select::CondSelectGadget;
 use ark_r1cs_std::{boolean::Boolean, fields::fp::FpVar};
 use ark_relations::r1cs::{ConstraintSystemRef, SynthesisError};
+
+/// Merkle path witness for inclusion proofs
+#[derive(Clone, Debug)]
+pub struct MerklePathWitness {
+    /// Sibling hashes along the path
+    pub siblings: Vec<Fr>,
+    /// Direction bits: true = current node is left child
+    pub is_left: Vec<bool>,
+}
+
+impl MerklePathWitness {
+    /// Create an empty path
+    pub fn empty(depth: usize) -> Self {
+        Self {
+            siblings: vec![Fr::from(0u64); depth],
+            is_left: vec![false; depth],
+        }
+    }
+}
+
 /// Compute leaf hash: Poseidon(pubkey || balance || nonce)
 fn compute_leaf(
     cs: ConstraintSystemRef<Fr>,

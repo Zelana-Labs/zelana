@@ -4,3 +4,4 @@ pub mod witness;
 pub mod witness_builder;
 
 pub mod circuit;
+pub mod l2_circuit;

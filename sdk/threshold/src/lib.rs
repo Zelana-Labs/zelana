@@ -25,6 +25,9 @@ pub mod committee;
 pub mod encrypted_tx;
 pub mod shares;
 
-pub use committee::{Committee, CommitteeConfig, CommitteeMember};
-pub use encrypted_tx::{EncryptedTransaction, decrypt_transaction, encrypt_for_committee};
+pub use committee::{Committee, CommitteeConfig, CommitteeMember, LocalCommitteeMember};
+pub use encrypted_tx::{
+    DecryptionCoordinator, EncryptedMempool, EncryptedTransaction, OrderedEncryptedTx,
+    decrypt_transaction, encrypt_for_committee,
+};
 pub use shares::{Share, ShareId, combine_shares, split_secret};

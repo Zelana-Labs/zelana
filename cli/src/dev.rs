@@ -120,37 +120,35 @@ impl DevEnvironment {
     }
 
     async fn start_mock_solana(&mut self) -> anyhow::Result<()> {
-        println!(" Starting local Solana validator...");
+        println!(" Starting local Solana validator via Surfpool...");
 
-        // Check if solana-test-validator is available
-        let check = Command::new("which").arg("solana-test-validator").output();
-
+        // Check if surfpool is available
+        let check = Command::new("which").arg("surfpool").output();
         if check.is_err() || !check.unwrap().status.success() {
-            println!("     solana-test-validator not found, skipping...");
-            println!(
-                "   Install with: sh -c \"$(curl -sSfL https://release.anza.xyz/stable/install)\""
-            );
+            println!("     surfpool not found, skipping...");
+            println!("     Install with: cargo install surfpool");
             return Ok(());
         }
 
         let ledger_path = self.config.db_path.join("solana-ledger");
         std::fs::create_dir_all(&ledger_path)?;
 
-        let proc = Command::new("solana-test-validator")
+        let proc = Command::new("surfpool")
+            .arg("start") // <-- surfpool owns the validator
             .arg("--ledger")
             .arg(&ledger_path)
-            .arg("--quiet")
             .arg("--reset")
+            .arg("--quiet")
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .spawn()?;
 
         self.solana_process = Some(proc);
 
-        // Wait for validator to start
+        // Give validator time to boot
         tokio::time::sleep(Duration::from_secs(3)).await;
-        println!("    Solana validator started");
 
+        println!("    Solana validator started via Surfpool");
         Ok(())
     }
 
@@ -171,8 +169,8 @@ impl DevEnvironment {
 
         if sequencer_binary.exists() {
             let proc = Command::new(&sequencer_binary)
-                .env("ZELANA_DB_PATH", db_path.to_str().unwrap())
-                .env("ZELANA_INGEST_PORT", self.config.sequencer_port.to_string())
+                .env("DB_PATH", db_path.to_str().unwrap())
+                .env("NGEST_PORT", self.config.sequencer_port.to_string())
                 .env("RUST_LOG", &self.config.log_level)
                 .stdout(Stdio::inherit())
                 .stderr(Stdio::inherit())

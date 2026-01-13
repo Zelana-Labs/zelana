@@ -1,11 +1,40 @@
-use ark_bls12_381::Fr;
+//! Witness builder for ZK proofs
+//!
+//! Builds witness data from execution traces for circuit proving.
+
+use ark_bn254::Fr;
 use ark_crypto_primitives::sponge::{CryptographicSponge, poseidon::PoseidonSponge};
 
 use crate::{
+    circuit::merkle::MerklePathWitness,
     circuit::poseidon::poseidon_config,
-    executor::ExecutionTrace,
     witness::{AccountWitness, WitnessTx},
 };
+
+/// Execution trace for a single transaction (provided by sequencer)
+#[derive(Clone, Debug)]
+pub struct ExecutionTraceTx {
+    pub tx_type: u8,
+    pub sender: ExecutionTraceAccount,
+    pub receiver: Option<ExecutionTraceAccount>,
+    pub amount: u64,
+    pub nonce: u64,
+}
+
+/// Account state from execution trace
+#[derive(Clone, Debug)]
+pub struct ExecutionTraceAccount {
+    pub pubkey: Fr,
+    pub balance: u64,
+    pub nonce: u64,
+    pub merkle_path: MerklePathWitness,
+}
+
+/// Full execution trace for a batch
+#[derive(Clone, Debug)]
+pub struct ExecutionTrace {
+    pub txs: Vec<ExecutionTraceTx>,
+}
 
 fn compute_tx_hash(pubkey: Fr, nonce: u64, amount: u64, tx_type: u8) -> Fr {
     let mut sponge = PoseidonSponge::<Fr>::new(&poseidon_config());

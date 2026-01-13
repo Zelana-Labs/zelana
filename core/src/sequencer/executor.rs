@@ -6,8 +6,6 @@ use log::{error, info};
 use std::{collections::HashMap, sync::Arc};
 use zelana_account::{AccountId, AccountState};
 use zelana_transaction::{SignedTransaction, Transaction, TransactionData, TransactionType};
-// use crate::storage::BatchExecutor;
-
 #[derive(Clone)]
 pub struct Executor {
     db: Arc<RocksDbStore>,
@@ -162,47 +160,3 @@ impl Executor {
         Ok(())
     }
 }
-
-// pub struct TransactionExecutor {
-//     pub db: RocksDbStore,
-// }
-
-// impl TransactionExecutor {
-//     pub fn new(db_path: &str) -> Result<Self> {
-//         let db = RocksDbStore::open(db_path)?;
-//         Ok(Self { db })
-//     }
-//     /// Takes a signed transaction, validates logic, and persists to DB.
-//     pub  fn process(&self, tx: SignedTransaction) -> anyhow::Result<()> {
-//         // SVM Execution
-//         // 1. Load Account
-//         // 2. Check Balance
-//         // 3. Update State
-
-//         //wrap in the execution engin
-//         let mut executor = BatchExecutor::new(&mut self.db);
-
-//         //wrap as TransactionType
-//         let l2_tx = Transaction {
-//         sender: tx.data.,
-//         tx_type: TransactionType::Transfer(tx),
-//         signature: tx.signature.clone(),
-//     };
-
-//         match executor.execute(&l2_tx) {
-//             Ok(_) => {
-//                 info!(
-//                     "COMMITTED: {} -> {} | Amt: {}",
-//                     tx.data.from.to_hex(),
-//                     tx.data.to.to_hex(),
-//                     tx.data.amount
-//                 );
-//                 Ok(())
-//             }
-//             Err(e) => {
-//                 error!("REVERTED: {}", e);
-//                 Err(e)
-//             }
-//         }
-//     }
-// }

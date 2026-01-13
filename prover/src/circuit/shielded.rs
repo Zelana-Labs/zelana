@@ -20,14 +20,14 @@
 //!   - output_notes[]: Value, randomness, owner for each output
 //! ```
 
-use ark_bls12_381::Fr;
+use ark_bn254::Fr;
 use ark_crypto_primitives::sponge::constraints::CryptographicSpongeVar;
 use ark_crypto_primitives::sponge::poseidon::{
     PoseidonConfig, constraints::PoseidonSpongeVar, find_poseidon_ark_and_mds,
 };
 use ark_ff::PrimeField;
 use ark_r1cs_std::{
-    alloc::AllocVar, boolean::Boolean, eq::EqGadget, fields::fp::FpVar, prelude::*,
+    R1CSVar, alloc::AllocVar, boolean::Boolean, eq::EqGadget, fields::fp::FpVar, prelude::*,
     select::CondSelectGadget,
 };
 use ark_relations::r1cs::{ConstraintSynthesizer, ConstraintSystemRef, SynthesisError};
@@ -278,7 +278,8 @@ fn compute_commitment(
     owner_pk: &FpVar<Fr>,
 ) -> Result<FpVar<Fr>, SynthesisError> {
     let mut sponge = PoseidonSpongeVar::new(cs, config);
-    sponge.absorb(&[value.clone(), randomness.clone(), owner_pk.clone()])?;
+    let inputs = vec![value.clone(), randomness.clone(), owner_pk.clone()];
+    sponge.absorb(&inputs.as_slice())?;
     let mut result = sponge.squeeze_field_elements(1)?;
     Ok(result.remove(0))
 }
@@ -295,12 +296,13 @@ fn compute_nullifier(
 
     // Domain separation
     let domain = FpVar::constant(Fr::from(0x4e554c4c_u64)); // "NULL"
-    sponge.absorb(&[
+    let inputs = vec![
         domain,
         spending_key.clone(),
         commitment.clone(),
         position.clone(),
-    ])?;
+    ];
+    sponge.absorb(&inputs.as_slice())?;
 
     let mut result = sponge.squeeze_field_elements(1)?;
     Ok(result.remove(0))
@@ -318,7 +320,8 @@ fn derive_public_key(
     let domain = FpVar::constant(Fr::from_le_bytes_mod_order(
         b"ZelanaPK\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0",
     ));
-    sponge.absorb(&[domain, spending_key.clone()])?;
+    let inputs = vec![domain, spending_key.clone()];
+    sponge.absorb(&inputs.as_slice())?;
 
     let mut result = sponge.squeeze_field_elements(1)?;
     Ok(result.remove(0))
@@ -343,10 +346,13 @@ fn verify_merkle_path(
         let is_right_var = Boolean::new_witness(cs.clone(), || Ok(*is_right))?;
 
         // If is_right, hash(sibling, current), else hash(current, sibling)
-        let (left, right) = FpVar::conditionally_swap(&is_right_var, &current, &sibling)?;
+        // Use conditionally_select: if is_right_var is true, returns first arg, else second
+        let left = FpVar::conditionally_select(&is_right_var, &sibling, &current)?;
+        let right = FpVar::conditionally_select(&is_right_var, &current, &sibling)?;
 
         let mut sponge = PoseidonSpongeVar::new(cs.clone(), config);
-        sponge.absorb(&[left, right])?;
+        let inputs = vec![left, right];
+        sponge.absorb(&inputs.as_slice())?;
         let mut parent = sponge.squeeze_field_elements(1)?;
         current = parent.remove(0);
     }

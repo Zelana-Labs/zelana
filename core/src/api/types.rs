@@ -60,8 +60,10 @@ pub struct SubmitShieldedResponse {
 /// Request to scan for notes owned by a viewing key
 #[derive(Debug, Deserialize)]
 pub struct ScanNotesRequest {
-    /// Viewing key (X25519 secret key bytes)
-    pub viewing_key: [u8; 32],
+    /// X25519 secret key for decryption (derived from spending key)
+    pub decryption_key: [u8; 32],
+    /// Owner's public key (to verify ownership)
+    pub owner_pk: [u8; 32],
     /// Start position (for incremental scanning)
     pub from_position: Option<u32>,
     /// Maximum notes to return
@@ -192,6 +194,133 @@ pub struct HealthResponse {
     pub healthy: bool,
     pub version: String,
     pub uptime_secs: u64,
+}
+
+// ============================================================================
+// Fast Withdrawal Types
+// ============================================================================
+
+/// Request for fast withdrawal quote
+#[derive(Debug, Deserialize)]
+pub struct FastWithdrawQuoteRequest {
+    /// Amount to withdraw
+    pub amount: u64,
+}
+
+/// Quote response for fast withdrawal
+#[derive(Debug, Serialize)]
+pub struct FastWithdrawQuoteResponse {
+    pub available: bool,
+    pub amount: u64,
+    pub fee: u64,
+    pub amount_received: u64,
+    pub fee_bps: u16,
+    pub lp_address: Option<String>,
+}
+
+/// Request to execute fast withdrawal
+#[derive(Debug, Deserialize)]
+pub struct FastWithdrawRequest {
+    /// Original withdrawal tx hash
+    pub withdrawal_tx_hash: [u8; 32],
+    /// User's L1 destination address
+    pub user_l1_address: [u8; 32],
+    /// Amount to withdraw
+    pub amount: u64,
+    /// LP address to use (from quote)
+    pub lp_address: [u8; 32],
+}
+
+/// Response after fast withdrawal execution
+#[derive(Debug, Serialize)]
+pub struct FastWithdrawResponse {
+    pub success: bool,
+    pub claim_id: Option<String>,
+    pub amount_fronted: u64,
+    pub fee: u64,
+    pub message: String,
+}
+
+/// LP registration request
+#[derive(Debug, Deserialize)]
+pub struct RegisterLpRequest {
+    pub l1_address: [u8; 32],
+    pub l2_address: [u8; 32],
+    pub collateral: u64,
+    pub custom_fee_bps: Option<u16>,
+}
+
+/// LP registration response
+#[derive(Debug, Serialize)]
+pub struct RegisterLpResponse {
+    pub success: bool,
+    pub message: String,
+}
+
+// ============================================================================
+// Encrypted Mempool Types (Threshold Encryption)
+// ============================================================================
+
+/// Request to submit a threshold-encrypted transaction
+#[derive(Debug, Deserialize)]
+pub struct SubmitEncryptedTxRequest {
+    /// Transaction ID
+    pub tx_id: [u8; 32],
+    /// Epoch when encrypted
+    pub epoch: u64,
+    /// Nonce for symmetric encryption
+    pub nonce: [u8; 12],
+    /// Encrypted transaction data
+    pub ciphertext: Vec<u8>,
+    /// Encrypted shares for each committee member
+    pub encrypted_shares: Vec<EncryptedShareData>,
+    /// Optional sender hint for fee tracking
+    pub sender_hint: Option<[u8; 32]>,
+}
+
+/// An encrypted share for a committee member
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct EncryptedShareData {
+    /// Target member ID
+    pub member_id: u8,
+    /// Ephemeral public key
+    pub ephemeral_pk: [u8; 32],
+    /// Nonce
+    pub nonce: [u8; 12],
+    /// Encrypted share ciphertext
+    pub ciphertext: Vec<u8>,
+}
+
+/// Response after submitting encrypted transaction
+#[derive(Debug, Serialize)]
+pub struct SubmitEncryptedTxResponse {
+    pub accepted: bool,
+    pub tx_id: String,
+    pub position: u64,
+    pub message: String,
+}
+
+/// Request to get committee info
+#[derive(Debug, Deserialize)]
+pub struct GetCommitteeRequest {}
+
+/// Committee member info (public)
+#[derive(Debug, Clone, Serialize)]
+pub struct CommitteeMemberInfo {
+    pub id: u8,
+    pub public_key: String,
+    pub endpoint: Option<String>,
+}
+
+/// Committee info response
+#[derive(Debug, Serialize)]
+pub struct CommitteeInfoResponse {
+    pub enabled: bool,
+    pub threshold: usize,
+    pub total_members: usize,
+    pub epoch: u64,
+    pub members: Vec<CommitteeMemberInfo>,
+    pub pending_count: usize,
 }
 
 // ============================================================================

@@ -1,10 +1,10 @@
 [package]
-name = "core"
+name = "zelana-core"
 version = { workspace = true }
 edition = { workspace = true }
 
 [[bin]]
-name = "core"
+name = "zelana-core"
 path = "src/main.rs"
 
 [dependencies]
@@ -34,14 +34,26 @@ zelana-keypair = { workspace = true }
 zelana-transaction = { workspace = true }
 zelana-block = { workspace = true }
 zelana-privacy = { workspace = true }
+zelana-threshold = { workspace = true }
+prover = { workspace = true }
 txblob = { workspace = true }
+
+# Arkworks for ZK proving
+ark-bn254 = "0.5.0"
+ark-ec = "0.5.0"
+ark-groth16 = "0.5.0"
+ark-snark = "0.5"
+ark-serialize = "0.5.0"
+ark-std = "0.5.0"
+ark-ff = "0.5.0"
+ark-crypto-primitives = { version = "0.5.0", features = ["sponge"] }
 axum = "0.8.8"
 tower-http = { version = "0.6.8", features = ["cors", "trace"] }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.148"
 tracing = "0.1.44"
 chrono = "0.4.42"
-reqwest = {version = "0.13.1" , features = ["json"]}
+reqwest = {version = "0.12.15" , features = ["json", "rustls-tls"]}
 
 
 [dev-dependencies]

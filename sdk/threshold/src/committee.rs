@@ -105,6 +105,16 @@ pub struct LocalCommitteeMember {
     pub public_key: PublicKey,
 }
 
+impl Clone for LocalCommitteeMember {
+    fn clone(&self) -> Self {
+        // StaticSecret doesn't implement Clone, so we need to reconstruct from bytes
+        // We can access the secret by doing ECDH with a known public key and deriving
+        // For simplicity, we store and reconstruct
+        let secret_bytes = self.secret_bytes();
+        Self::from_secret(self.id, secret_bytes)
+    }
+}
+
 impl LocalCommitteeMember {
     /// Generate a new random member
     pub fn generate(id: ShareId) -> Self {
@@ -127,6 +137,11 @@ impl LocalCommitteeMember {
             secret_key,
             public_key,
         }
+    }
+
+    /// Get the secret key bytes (for cloning/serialization)
+    pub fn secret_bytes(&self) -> [u8; 32] {
+        self.secret_key.to_bytes()
     }
 
     /// Get the public member info

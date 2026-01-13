@@ -13,9 +13,11 @@ use log::{error, info, warn};
 use tokio::sync::Mutex;
 
 use super::types::*;
-use crate::sequencer::batch::BatchService;
 use crate::sequencer::db::RocksDbStore;
+use crate::sequencer::fast_withdrawals::FastWithdrawManager;
+use crate::sequencer::pipeline::PipelineService;
 use crate::sequencer::shielded_state::ShieldedState;
+use crate::sequencer::threshold_mempool::ThresholdMempoolManager;
 use crate::sequencer::withdrawals::WithdrawalQueue;
 use crate::storage::StateStore;
 use zelana_account::AccountId;
@@ -29,9 +31,11 @@ use zelana_transaction::{PrivateTransaction, TransactionType};
 #[derive(Clone)]
 pub struct ApiState {
     pub db: Arc<RocksDbStore>,
-    pub batch_service: Arc<BatchService>,
+    pub pipeline_service: Arc<PipelineService>,
     pub shielded_state: Arc<Mutex<ShieldedState>>,
     pub withdrawal_queue: Arc<Mutex<WithdrawalQueue>>,
+    pub fast_withdraw: Option<Arc<FastWithdrawManager>>,
+    pub threshold_mempool: Option<Arc<ThresholdMempoolManager>>,
     pub start_time: std::time::Instant,
 }
 
@@ -64,12 +68,12 @@ pub async fn get_state_roots(State(state): State<ApiState>) -> impl IntoResponse
 
 /// Get batch status
 pub async fn get_batch_status(State(state): State<ApiState>) -> impl IntoResponse {
-    match state.batch_service.stats().await {
+    match state.pipeline_service.stats().await {
         Ok(stats) => Json(BatchStatusResponse {
-            current_batch_id: stats.next_batch_id.saturating_sub(1),
-            current_batch_txs: stats.current_batch_txs,
-            proving_count: stats.proving_count,
-            pending_settlement: stats.pending_settlement_count,
+            current_batch_id: stats.batch_stats.next_batch_id.saturating_sub(1),
+            current_batch_txs: stats.batch_stats.current_batch_txs,
+            proving_count: stats.batch_stats.proving_count,
+            pending_settlement: stats.batch_stats.pending_settlement_count,
         })
         .into_response(),
         Err(e) => {
@@ -153,8 +157,8 @@ pub async fn submit_shielded(
         *hasher.finalize().as_bytes()
     };
 
-    // Submit to batch service
-    match state.batch_service.submit(tx).await {
+    // Submit to pipeline service
+    match state.pipeline_service.submit(tx).await {
         Ok(()) => {
             info!("Shielded tx accepted: {}", hex::encode(tx_hash));
             Json(SubmitShieldedResponse {
@@ -212,22 +216,103 @@ pub async fn scan_notes(
     State(state): State<ApiState>,
     Json(req): Json<ScanNotesRequest>,
 ) -> impl IntoResponse {
-    // Note: Full implementation would:
-    // 1. Load all encrypted notes from DB
-    // 2. Try to decrypt each with the viewing key
-    // 3. Return successfully decrypted notes
-
-    // For MVP, return empty list
-    // TODO: Implement full note scanning
-
+    // Get the range to scan
     let from = req.from_position.unwrap_or(0);
-    let shielded = state.shielded_state.lock().await;
-    let to = shielded.next_position();
+    let limit = req.limit.unwrap_or(1000);
+
+    // Load all encrypted notes from DB
+    let encrypted_notes = match state.db.get_all_encrypted_notes() {
+        Ok(notes) => notes,
+        Err(e) => {
+            error!("Failed to load encrypted notes: {}", e);
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse::internal("Failed to load notes")),
+            )
+                .into_response();
+        }
+    };
+
+    // Also need positions - get commitments to map positions
+    let commitments = match state.db.get_all_commitments() {
+        Ok(c) => c,
+        Err(e) => {
+            error!("Failed to load commitments: {}", e);
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse::internal("Failed to load commitments")),
+            )
+                .into_response();
+        }
+    };
+
+    // Build commitment -> position map
+    let commitment_to_pos: std::collections::HashMap<[u8; 32], u32> =
+        commitments.into_iter().map(|(pos, cm)| (cm, pos)).collect();
+
+    let mut scanned_notes = Vec::new();
+    let mut max_pos = from;
+    let total_notes = encrypted_notes.len();
+
+    for (commitment, encrypted_note) in encrypted_notes {
+        // Get position for this commitment
+        let position = match commitment_to_pos.get(&commitment) {
+            Some(&pos) => pos,
+            None => continue, // Skip if not in tree yet
+        };
+
+        // Skip if before requested range
+        if position < from {
+            continue;
+        }
+
+        // Update max position seen
+        if position > max_pos {
+            max_pos = position;
+        }
+
+        // Try to decrypt the note
+        if let Some((note, memo)) = zelana_privacy::try_decrypt_note(
+            &encrypted_note,
+            &req.decryption_key,
+            req.owner_pk,
+            &commitment,
+        ) {
+            // Successfully decrypted - this note belongs to us
+            let memo_str = if memo.is_empty() {
+                None
+            } else {
+                String::from_utf8(memo).ok()
+            };
+
+            scanned_notes.push(ScannedNote {
+                position,
+                commitment: hex::encode(commitment),
+                value: note.value.0,
+                memo: memo_str,
+            });
+
+            // Check limit
+            if scanned_notes.len() >= limit {
+                break;
+            }
+        }
+    }
+
+    // Sort by position
+    scanned_notes.sort_by_key(|n| n.position);
+
+    info!(
+        "Scanned {} notes, found {} owned",
+        total_notes,
+        scanned_notes.len()
+    );
 
     Json(ScanNotesResponse {
-        notes: vec![],
-        scanned_to: to,
+        notes: scanned_notes,
+        scanned_to: max_pos,
     })
+    .into_response()
 }
 
 // ============================================================================
@@ -259,8 +344,8 @@ pub async fn submit_withdrawal(
         *hasher.finalize().as_bytes()
     };
 
-    // Submit to batch service
-    match state.batch_service.submit(tx).await {
+    // Submit to pipeline service
+    match state.pipeline_service.submit(tx).await {
         Ok(()) => {
             info!("Withdrawal accepted: {}", hex::encode(tx_hash));
             Json(WithdrawResponse {
@@ -342,4 +427,319 @@ pub async fn get_withdrawal_status(
         )
             .into_response(),
     }
+}
+
+// ============================================================================
+// Fast Withdrawal Operations
+// ============================================================================
+
+/// Get quote for fast withdrawal
+pub async fn fast_withdraw_quote(
+    State(state): State<ApiState>,
+    Json(req): Json<FastWithdrawQuoteRequest>,
+) -> impl IntoResponse {
+    let fast_withdraw = match &state.fast_withdraw {
+        Some(fw) => fw,
+        None => {
+            return Json(FastWithdrawQuoteResponse {
+                available: false,
+                amount: req.amount,
+                fee: 0,
+                amount_received: 0,
+                fee_bps: 0,
+                lp_address: None,
+            })
+            .into_response();
+        }
+    };
+
+    match fast_withdraw.get_quote(req.amount).await {
+        Some(quote) => Json(FastWithdrawQuoteResponse {
+            available: true,
+            amount: quote.amount,
+            fee: quote.fee,
+            amount_received: quote.amount_received,
+            fee_bps: quote.fee_bps,
+            lp_address: Some(hex::encode(quote.lp_address)),
+        })
+        .into_response(),
+        None => Json(FastWithdrawQuoteResponse {
+            available: false,
+            amount: req.amount,
+            fee: 0,
+            amount_received: 0,
+            fee_bps: 0,
+            lp_address: None,
+        })
+        .into_response(),
+    }
+}
+
+/// Execute fast withdrawal
+pub async fn execute_fast_withdraw(
+    State(state): State<ApiState>,
+    Json(req): Json<FastWithdrawRequest>,
+) -> impl IntoResponse {
+    let fast_withdraw = match &state.fast_withdraw {
+        Some(fw) => fw,
+        None => {
+            return (
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(FastWithdrawResponse {
+                    success: false,
+                    claim_id: None,
+                    amount_fronted: 0,
+                    fee: 0,
+                    message: "Fast withdrawals not enabled".to_string(),
+                }),
+            )
+                .into_response();
+        }
+    };
+
+    match fast_withdraw
+        .execute_fast_withdraw(
+            req.withdrawal_tx_hash,
+            req.user_l1_address,
+            req.amount,
+            req.lp_address,
+        )
+        .await
+    {
+        Ok(claim) => {
+            info!(
+                "Fast withdrawal executed: claim_id={}",
+                hex::encode(claim.claim_id)
+            );
+            Json(FastWithdrawResponse {
+                success: true,
+                claim_id: Some(hex::encode(claim.claim_id)),
+                amount_fronted: claim.amount_fronted,
+                fee: claim.fee,
+                message: "Fast withdrawal executed successfully".to_string(),
+            })
+            .into_response()
+        }
+        Err(e) => {
+            warn!("Fast withdrawal failed: {}", e);
+            (
+                StatusCode::BAD_REQUEST,
+                Json(FastWithdrawResponse {
+                    success: false,
+                    claim_id: None,
+                    amount_fronted: 0,
+                    fee: 0,
+                    message: e.to_string(),
+                }),
+            )
+                .into_response()
+        }
+    }
+}
+
+/// Register as liquidity provider
+pub async fn register_lp(
+    State(state): State<ApiState>,
+    Json(req): Json<RegisterLpRequest>,
+) -> impl IntoResponse {
+    let fast_withdraw = match &state.fast_withdraw {
+        Some(fw) => fw,
+        None => {
+            return (
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(RegisterLpResponse {
+                    success: false,
+                    message: "Fast withdrawals not enabled".to_string(),
+                }),
+            )
+                .into_response();
+        }
+    };
+
+    match fast_withdraw
+        .register_lp(
+            req.l1_address,
+            req.l2_address,
+            req.collateral,
+            req.custom_fee_bps,
+        )
+        .await
+    {
+        Ok(()) => {
+            info!("LP registered: {}", hex::encode(req.l1_address));
+            Json(RegisterLpResponse {
+                success: true,
+                message: "LP registered successfully".to_string(),
+            })
+            .into_response()
+        }
+        Err(e) => {
+            warn!("LP registration failed: {}", e);
+            (
+                StatusCode::BAD_REQUEST,
+                Json(RegisterLpResponse {
+                    success: false,
+                    message: e.to_string(),
+                }),
+            )
+                .into_response()
+        }
+    }
+}
+
+// ============================================================================
+// Encrypted Mempool Operations (Threshold Encryption)
+// ============================================================================
+
+/// Submit an encrypted transaction to the threshold mempool
+pub async fn submit_encrypted_tx(
+    State(state): State<ApiState>,
+    Json(req): Json<SubmitEncryptedTxRequest>,
+) -> impl IntoResponse {
+    let threshold_mempool = match &state.threshold_mempool {
+        Some(tm) => tm,
+        None => {
+            return (
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(SubmitEncryptedTxResponse {
+                    accepted: false,
+                    tx_id: hex::encode(req.tx_id),
+                    position: 0,
+                    message: "Threshold encryption not enabled".to_string(),
+                }),
+            )
+                .into_response();
+        }
+    };
+
+    // Check if active
+    if !threshold_mempool.is_active().await {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(SubmitEncryptedTxResponse {
+                accepted: false,
+                tx_id: hex::encode(req.tx_id),
+                position: 0,
+                message: "Threshold encryption committee not initialized".to_string(),
+            }),
+        )
+            .into_response();
+    }
+
+    // Convert API types to SDK types
+    use zelana_threshold::EncryptedTransaction;
+    use zelana_threshold::committee::EncryptedShare;
+
+    let encrypted_shares: Vec<EncryptedShare> = req
+        .encrypted_shares
+        .into_iter()
+        .map(|s| EncryptedShare {
+            member_id: s.member_id,
+            ephemeral_pk: s.ephemeral_pk,
+            nonce: s.nonce,
+            ciphertext: s.ciphertext,
+        })
+        .collect();
+
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0);
+
+    let encrypted_tx = EncryptedTransaction {
+        tx_id: req.tx_id,
+        epoch: req.epoch,
+        nonce: req.nonce,
+        ciphertext: req.ciphertext,
+        encrypted_shares,
+        timestamp,
+        sender_hint: req.sender_hint,
+    };
+
+    // Add to mempool
+    match threshold_mempool.add_encrypted_tx(encrypted_tx).await {
+        Ok(()) => {
+            let pending = threshold_mempool.pending_count().await;
+            info!(
+                "Encrypted tx accepted: {}, pending={}",
+                hex::encode(req.tx_id),
+                pending
+            );
+            Json(SubmitEncryptedTxResponse {
+                accepted: true,
+                tx_id: hex::encode(req.tx_id),
+                position: pending as u64,
+                message: "Encrypted transaction accepted".to_string(),
+            })
+            .into_response()
+        }
+        Err(e) => {
+            warn!("Encrypted tx rejected: {}", e);
+            (
+                StatusCode::BAD_REQUEST,
+                Json(SubmitEncryptedTxResponse {
+                    accepted: false,
+                    tx_id: hex::encode(req.tx_id),
+                    position: 0,
+                    message: e.to_string(),
+                }),
+            )
+                .into_response()
+        }
+    }
+}
+
+/// Get committee information for clients to encrypt transactions
+pub async fn get_committee_info(State(state): State<ApiState>) -> impl IntoResponse {
+    let threshold_mempool = match &state.threshold_mempool {
+        Some(tm) => tm,
+        None => {
+            return Json(CommitteeInfoResponse {
+                enabled: false,
+                threshold: 0,
+                total_members: 0,
+                epoch: 0,
+                members: vec![],
+                pending_count: 0,
+            })
+            .into_response();
+        }
+    };
+
+    let committee = match threshold_mempool.committee().await {
+        Some(c) => c,
+        None => {
+            return Json(CommitteeInfoResponse {
+                enabled: false,
+                threshold: 0,
+                total_members: 0,
+                epoch: 0,
+                members: vec![],
+                pending_count: 0,
+            })
+            .into_response();
+        }
+    };
+
+    let members: Vec<CommitteeMemberInfo> = committee
+        .members
+        .iter()
+        .map(|m| CommitteeMemberInfo {
+            id: m.id,
+            public_key: hex::encode(m.public_key),
+            endpoint: m.endpoint.clone(),
+        })
+        .collect();
+
+    let pending = threshold_mempool.pending_count().await;
+
+    Json(CommitteeInfoResponse {
+        enabled: true,
+        threshold: committee.config.threshold,
+        total_members: committee.config.total_members,
+        epoch: committee.config.epoch,
+        members,
+        pending_count: pending,
+    })
+    .into_response()
 }

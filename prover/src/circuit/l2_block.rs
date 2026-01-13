@@ -2,7 +2,8 @@ use crate::{
     circuit::{hash::hash2, merkle::verify_merkle_path},
     witness::WitnessTx,
 };
-use ark_bls12_381::Fr;
+use ark_bn254::Fr;
+use ark_ff::One;
 use ark_r1cs_std::alloc::AllocVar;
 use ark_r1cs_std::eq::EqGadget;
 use ark_r1cs_std::fields::FieldVar;

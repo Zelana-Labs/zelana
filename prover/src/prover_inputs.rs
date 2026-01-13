@@ -1,6 +1,6 @@
 // crates/zelana-prover/src/prover_input.rs
 
-use ark_bls12_381::Fr;
+use ark_bn254::Fr;
 
 use crate::witness::WitnessTx;
 

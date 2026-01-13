@@ -16,8 +16,11 @@ ark-r1cs-std = "=0.5.0"
 ark-serialize = "=0.5.0"
 
 ark-groth16 = "=0.5.0"
-ark-bls12-381 = "=0.5.0"
-ark-ed-on-bls12-381 = "=0.5.0"
+ark-snark = "0.5"
+ark-bn254 = "=0.5.0"
+# BLS12-381 kept for reference but not used in circuits
+# ark-bls12-381 = "=0.5.0"
+# ark-ed-on-bls12-381 = "=0.5.0"
 
 ark-crypto-primitives = { version = "=0.5.0", default-features = false, features = [
     "std",
@@ -26,6 +29,9 @@ ark-crypto-primitives = { version = "=0.5.0", default-features = false, features
     "crh",
     "signature",
 ] }
+base64 = "0.22"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
 tower-http = "0.6.8"
 solana-sdk = "3.0.0"
 hex = { version = "0.4.3", features = ["serde"] }

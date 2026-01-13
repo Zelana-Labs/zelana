@@ -145,33 +145,45 @@ impl Settler {
     }
 
     /// Submit a batch state update to L1
-    pub fn submit_state_update(&self, proof: &BatchProof) -> Result<SettlementResult> {
-        let (config_pda, state_pda) = self.get_pdas()?;
+    pub fn submit_state_update(
+        &self,
+        proof: &BatchProof,
+        prev_batch_id: u64,
+    ) -> Result<SettlementResult> {
+        let (config_pda, _state_pda) = self.get_pdas()?;
         let inputs = &proof.public_inputs;
 
         // Build instruction data
-        // Instruction discriminator: 2 = SubmitBatch
-        let mut data = vec![2u8];
+        // Instruction discriminator: 3 = SubmitBatch
+        let mut data = vec![3u8];
 
-        // Batch ID (8 bytes)
+        // SubmitBatchHeader (packed, C repr):
+        // prev_batch_index: u64
+        data.extend_from_slice(&prev_batch_id.to_le_bytes());
+        // new_batch_index: u64
         data.extend_from_slice(&inputs.batch_id.to_le_bytes());
-
-        // State roots (32 bytes each)
+        // new_state_root: [u8; 32]
         data.extend_from_slice(&inputs.post_state_root);
-        data.extend_from_slice(&inputs.post_shielded_root);
-        data.extend_from_slice(&inputs.withdrawal_root);
-
-        // Proof length + proof bytes
+        // proof_len: u32
         let proof_len = proof.proof_bytes.len() as u32;
         data.extend_from_slice(&proof_len.to_le_bytes());
+        // withdrawal_count: u32 (0 for now, withdrawals handled separately)
+        data.extend_from_slice(&0u32.to_le_bytes());
+
+        // Proof bytes
         data.extend_from_slice(&proof.proof_bytes);
+
+        // Derive vault PDA
+        let (vault_pda, _) =
+            Pubkey::find_program_address(&[b"vault", &self.config.domain], &self.program_id);
 
         let instruction = Instruction {
             program_id: self.program_id,
             accounts: vec![
-                AccountMeta::new(self.sequencer_keypair.pubkey(), true), // payer/signer
-                AccountMeta::new_readonly(config_pda, false),            // config
-                AccountMeta::new(state_pda, false),                      // state
+                AccountMeta::new(self.sequencer_keypair.pubkey(), true), // sequencer (signer)
+                AccountMeta::new(config_pda, false),                     // config
+                AccountMeta::new_readonly(vault_pda, false),             // vault
+                                                                         // Note: verifier_program and system_program can be added if needed
             ],
             data,
         };
@@ -358,9 +370,9 @@ impl SettlerService {
     }
 
     /// Submit a batch for settlement
-    pub async fn submit(&self, proof: &BatchProof) -> Result<SettlementResult> {
+    pub async fn submit(&self, proof: &BatchProof, prev_batch_id: u64) -> Result<SettlementResult> {
         let settler = self.settler.lock().await;
-        settler.submit_state_update(proof)
+        settler.submit_state_update(proof, prev_batch_id)
     }
 
     /// Wait for confirmation

@@ -26,6 +26,16 @@ pub fn create_router(state: ApiState) -> Router {
         // Withdrawal operations
         .route("/withdraw", post(handlers::submit_withdrawal))
         .route("/withdraw/status", post(handlers::get_withdrawal_status))
+        // Fast withdrawal operations
+        .route("/withdraw/fast/quote", post(handlers::fast_withdraw_quote))
+        .route(
+            "/withdraw/fast/execute",
+            post(handlers::execute_fast_withdraw),
+        )
+        .route("/withdraw/fast/register_lp", post(handlers::register_lp))
+        // Encrypted mempool operations (threshold encryption)
+        .route("/encrypted/submit", post(handlers::submit_encrypted_tx))
+        .route("/encrypted/committee", get(handlers::get_committee_info))
         // CORS
         .layer(CorsLayer::permissive())
         .with_state(state)
