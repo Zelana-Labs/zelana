@@ -66,7 +66,7 @@ pub fn verify_merkle_path(
 /// Update Merkle root after modifying a leaf
 pub fn update_merkle_root(
     cs: ConstraintSystemRef<Fr>,
-    old_root: &FpVar<Fr>,
+    _old_root: &FpVar<Fr>,
     pubkey: &FpVar<Fr>,
     new_balance: &FpVar<Fr>,
     new_nonce: &FpVar<Fr>,

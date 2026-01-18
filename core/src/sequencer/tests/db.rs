@@ -1,6 +1,6 @@
 use tempfile::TempDir;
 
-use crate::sequencer::db::RocksDbStore;
+use crate::sequencer::RocksDbStore;
 use crate::storage::state::StateStore;
 use zelana_account::{AccountId, AccountState};
 use zelana_block::{BlockHeader, HEADER_MAGIC, HEADER_VERSION};

@@ -1,21 +1,32 @@
 use pinocchio::{
+    ProgramResult,
     account_info::AccountInfo,
     instruction::{Seed, Signer},
     program_error::ProgramError,
-    sysvars::{clock::Clock, rent::Rent, Sysvar},
-    ProgramResult,
+    sysvars::{Sysvar, clock::Clock, rent::Rent},
 };
 use pinocchio_log::log;
 use pinocchio_system::instructions::{CreateAccount, Transfer};
 
-use crate::{
-    ID, helpers::{StateDefinition, check_signer, derive_deposit_receipt_pda, derive_vault_pda, load_acc_mut_unchecked, load_ix_data}, instruction::DepositParams, state::{Config, DepositReceipt}
-};
 use crate::helpers::utils::Initialized;
+use crate::{
+    ID,
+    helpers::{
+        StateDefinition, check_signer, derive_deposit_receipt_pda, derive_vault_pda,
+        load_acc_mut_unchecked, load_ix_data,
+    },
+    instruction::DepositParams,
+    state::{Config, DepositReceipt},
+};
 
 pub fn process_deposit(accounts: &[AccountInfo], ix_data: &[u8]) -> ProgramResult {
-    let [depositor, config_account, vault_account, receipt_account, _system_program] =
-        accounts
+    let [
+        depositor,
+        config_account,
+        vault_account,
+        receipt_account,
+        _system_program,
+    ] = accounts
     else {
         return Err(ProgramError::NotEnoughAccountKeys);
     };
@@ -28,11 +39,9 @@ pub fn process_deposit(accounts: &[AccountInfo], ix_data: &[u8]) -> ProgramResul
         return Err(ProgramError::InvalidInstructionData);
     }
 
-     let mut config_data = config_account.try_borrow_mut_data()?;
+    let mut config_data = config_account.try_borrow_mut_data()?;
 
-    let config = unsafe {
-        load_acc_mut_unchecked::<Config>(&mut config_data)?
-    };
+    let config = unsafe { load_acc_mut_unchecked::<Config>(&mut config_data)? };
 
     // load config and domain
 
@@ -95,9 +104,7 @@ pub fn process_deposit(accounts: &[AccountInfo], ix_data: &[u8]) -> ProgramResul
     let clock = Clock::get()?;
     let mut receipt_data = receipt_account.try_borrow_mut_data()?;
 
-    let  receipt = unsafe {
-        load_acc_mut_unchecked::<DepositReceipt>(&mut receipt_data)?
-    };
+    let receipt = unsafe { load_acc_mut_unchecked::<DepositReceipt>(&mut receipt_data)? };
 
     receipt.new(
         *depositor.key(),

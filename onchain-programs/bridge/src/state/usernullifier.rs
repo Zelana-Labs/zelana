@@ -14,7 +14,7 @@ pub struct UsedNullifier {
     pub bump: u8,
     pub _padding: [u8; 6],
 }
-impl StateDefinition for UsedNullifier{
+impl StateDefinition for UsedNullifier {
     const LEN: usize = core::mem::size_of::<UsedNullifier>();
 }
 

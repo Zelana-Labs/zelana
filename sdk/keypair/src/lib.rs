@@ -1,4 +1,3 @@
-use bs58;
 use chacha20poly1305::aead::OsRng;
 use chacha20poly1305::aead::rand_core::RngCore;
 use ed25519_dalek::{Signer, SigningKey};
@@ -75,6 +74,35 @@ impl Keypair {
 
         SignedTransaction {
             data,
+            signature,
+            signer_pubkey: self.signing_key.verifying_key().to_bytes(),
+        }
+    }
+
+    /// Signs a withdrawal request.
+    /// The message format is: from || to_l1_address || amount (le) || nonce (le)
+    pub fn sign_withdrawal(
+        &self,
+        to_l1_address: [u8; 32],
+        amount: u64,
+        nonce: u64,
+    ) -> zelana_transaction::WithdrawRequest {
+        // Build canonical message
+        let mut msg = Vec::with_capacity(32 + 32 + 8 + 8);
+        let from = self.account_id();
+        msg.extend_from_slice(&from.0);
+        msg.extend_from_slice(&to_l1_address);
+        msg.extend_from_slice(&amount.to_le_bytes());
+        msg.extend_from_slice(&nonce.to_le_bytes());
+
+        // Sign
+        let signature = self.signing_key.sign(&msg).to_bytes().to_vec();
+
+        zelana_transaction::WithdrawRequest {
+            from,
+            to_l1_address,
+            amount,
+            nonce,
             signature,
             signer_pubkey: self.signing_key.verifying_key().to_bytes(),
         }

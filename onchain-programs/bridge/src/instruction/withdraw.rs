@@ -1,26 +1,38 @@
 use pinocchio::{
+    ProgramResult,
     account_info::AccountInfo,
     instruction::{Seed, Signer},
     program_error::ProgramError,
-    pubkey::{ Pubkey},
-    sysvars::{clock::Clock, rent::Rent, Sysvar},
-    ProgramResult,
+    pubkey::Pubkey,
+    sysvars::{Sysvar, clock::Clock, rent::Rent},
 };
 use pinocchio_log::log;
 use pinocchio_system::instructions::CreateAccount;
 
-use crate::{
-    ID, helpers::{StateDefinition, check_signer, derive_nullifier_pda, derive_vault_pda, load_acc, load_acc_mut_unchecked, load_ix_data}, instruction::WithdrawAttestedParams, state::{Config, UsedNullifier}
-};
 use crate::helpers::utils::Initialized;
+use crate::{
+    ID,
+    helpers::{
+        StateDefinition, check_signer, derive_nullifier_pda, derive_vault_pda, load_acc,
+        load_acc_mut_unchecked, load_ix_data,
+    },
+    instruction::WithdrawAttestedParams,
+    state::{Config, UsedNullifier},
+};
 
 pub fn process_withdraw_attested(
     program_id: &Pubkey,
     accounts: &[AccountInfo],
     ix_data: &[u8],
 ) -> ProgramResult {
-    let [sequencer, config_account, vault_account, recipient, nullifier_account, _system_program] =
-        accounts
+    let [
+        sequencer,
+        config_account,
+        vault_account,
+        recipient,
+        nullifier_account,
+        _system_program,
+    ] = accounts
     else {
         return Err(ProgramError::NotEnoughAccountKeys);
     };
@@ -52,8 +64,7 @@ pub fn process_withdraw_attested(
         return Err(ProgramError::InvalidSeeds);
     }
 
-    let (nullifier_pda, nullifier_bump) =
-        derive_nullifier_pda(&ID, &domain, &params.nullifier);
+    let (nullifier_pda, nullifier_bump) = derive_nullifier_pda(&ID, &domain, &params.nullifier);
 
     if nullifier_account.key() != &nullifier_pda {
         return Err(ProgramError::InvalidSeeds);
@@ -62,7 +73,6 @@ pub fn process_withdraw_attested(
     if !nullifier_account.data_is_empty() {
         return Err(ProgramError::InvalidInstructionData); // replay attempt
     }
-
 
     let rent = Rent::get()?;
     let bump_bytes = [nullifier_bump];

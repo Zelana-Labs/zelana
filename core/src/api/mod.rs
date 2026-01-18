@@ -8,5 +8,5 @@ pub mod routes;
 pub mod types;
 pub mod udp_server;
 
-pub use routes::create_router;
-pub use udp_server::{UdpServerConfig, ZephyrUdpServer, start_udp_server};
+// Re-export UDP server types (used by main.rs)
+pub use udp_server::{UdpServerConfig, start_udp_server};

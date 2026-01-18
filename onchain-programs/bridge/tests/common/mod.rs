@@ -1,9 +1,24 @@
-use bridge_z::{helpers::StateDefinition, instruction::{BridgeIx, InitParams}, state::{Config, Vault}, ID};
-use litesvm::{types::{FailedTransactionMetadata, TransactionMetadata}, LiteSVM};
-use solana_sdk::{instruction::{AccountMeta, Instruction}, message::{v0, VersionedMessage}, pubkey::Pubkey, signature::Keypair, signer::Signer, system_instruction, system_program, transaction::{Transaction, VersionedTransaction}};
+use bridge_z::{
+    ID,
+    helpers::StateDefinition,
+    instruction::{BridgeIx, InitParams},
+    state::{Config, Vault},
+};
+use litesvm::{
+    LiteSVM,
+    types::{FailedTransactionMetadata, TransactionMetadata},
+};
+use solana_sdk::{
+    instruction::{AccountMeta, Instruction},
+    message::{VersionedMessage, v0},
+    pubkey::Pubkey,
+    signature::Keypair,
+    signer::Signer,
+    system_instruction, system_program,
+    transaction::{Transaction, VersionedTransaction},
+};
 
 pub const TEST_DOMAIN: [u8; 32] = [1u8; 32];
-
 
 pub fn derive_config_pda(program_id: &Pubkey, domain: &[u8; 32]) -> (Pubkey, u8) {
     Pubkey::find_program_address(&[b"config", domain.as_ref()], program_id)
@@ -29,18 +44,18 @@ pub fn setup_svm_and_program() -> (LiteSVM, Keypair, Keypair, Pubkey) {
     (svm, fee_payer, second_keypair, program_id)
 }
 
-pub struct TestFixture{
-    pub svm :LiteSVM,
-    pub payer : Keypair,
-    pub sequencer:Keypair,
+pub struct TestFixture {
+    pub svm: LiteSVM,
+    pub payer: Keypair,
+    pub sequencer: Keypair,
     pub program_id: Pubkey,
     pub domain: [u8; 32],
-    pub config_pda:Pubkey,
-    pub vault_pda:Pubkey
+    pub config_pda: Pubkey,
+    pub vault_pda: Pubkey,
 }
 
-impl TestFixture{
-    pub fn new()->Self{
+impl TestFixture {
+    pub fn new() -> Self {
         let mut svm = LiteSVM::new();
         let payer = Keypair::new();
         let sequencer = Keypair::new();
@@ -48,14 +63,15 @@ impl TestFixture{
         let program_id = Pubkey::from(ID);
 
         svm.airdrop(&sequencer.pubkey(), 10_000_000_000).unwrap();
-        
-        svm.add_program_from_file(program_id, "./target/deploy/bridge_z.so").unwrap();
+
+        svm.add_program_from_file(program_id, "./target/deploy/bridge_z.so")
+            .unwrap();
 
         let domain = TEST_DOMAIN;
         let (config_pda, _) = derive_config_pda(&program_id, &domain);
         let (vault_pda, _) = derive_vault_pda(&program_id, &domain);
 
-        Self{
+        Self {
             svm,
             payer,
             sequencer,
@@ -69,7 +85,7 @@ impl TestFixture{
         &mut self,
         signers: &[&Keypair],
         instruction: Vec<Instruction>,
-        ) -> Result<TransactionMetadata, FailedTransactionMetadata> {
+    ) -> Result<TransactionMetadata, FailedTransactionMetadata> {
         let msg = v0::Message::try_compile(
             &self.payer.pubkey(),
             &instruction,
@@ -86,9 +102,9 @@ impl TestFixture{
         self.svm.send_transaction(tx)
     }
 
-    pub fn initialize_bridge(&mut self)->Result<TransactionMetadata,FailedTransactionMetadata>{
+    pub fn initialize_bridge(&mut self) -> Result<TransactionMetadata, FailedTransactionMetadata> {
         let sequencer_pubkey = self.sequencer.pubkey();
-        let ix_data = InitParams{
+        let ix_data = InitParams {
             sequencer_authority: *sequencer_pubkey.as_array(),
             domain: self.domain,
         };
@@ -98,21 +114,23 @@ impl TestFixture{
         let accounts = vec![
             AccountMeta::new(self.payer.pubkey(), true),
             AccountMeta::new(self.config_pda, false),
-            AccountMeta::new(self.vault_pda,false),
-            AccountMeta::new(system_program::ID,false)
+            AccountMeta::new(self.vault_pda, false),
+            AccountMeta::new(system_program::ID, false),
         ];
 
-        let init_ix = Instruction{
-            program_id:Pubkey::from(ID),
+        let init_ix = Instruction {
+            program_id: Pubkey::from(ID),
             accounts,
-            data:instruction_data
+            data: instruction_data,
         };
 
- self.build_and_send_transaction(&[], vec![init_ix])
-        
+        self.build_and_send_transaction(&[], vec![init_ix])
     }
 
-    pub fn fund_vault(&mut self, amount: u64) -> Result<TransactionMetadata, FailedTransactionMetadata> {
+    pub fn fund_vault(
+        &mut self,
+        amount: u64,
+    ) -> Result<TransactionMetadata, FailedTransactionMetadata> {
         let transfer_ix =
             system_instruction::transfer(&self.payer.pubkey(), &self.vault_pda, amount);
 

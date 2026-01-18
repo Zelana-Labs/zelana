@@ -27,7 +27,7 @@ use ark_crypto_primitives::sponge::poseidon::{
 };
 use ark_ff::PrimeField;
 use ark_r1cs_std::{
-    R1CSVar, alloc::AllocVar, boolean::Boolean, eq::EqGadget, fields::fp::FpVar, prelude::*,
+    alloc::AllocVar, boolean::Boolean, eq::EqGadget, fields::fp::FpVar, prelude::*,
     select::CondSelectGadget,
 };
 use ark_relations::r1cs::{ConstraintSynthesizer, ConstraintSystemRef, SynthesisError};

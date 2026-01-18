@@ -4,12 +4,12 @@
 //!
 //! ```text
 //! ┌─────────────────────────────────────────────────────────────────────────┐
-//! │                         Zelana Sequencer                                 │
-//! │                                                                          │
+//! │                         Zelana Sequencer                                │
+//! │                                                                         │
 //! │  ┌─────────────┐  ┌─────────────────────────────────────────────────┐   │
-//! │  │  HTTP API   │  │              Pipeline Orchestrator               │   │
+//! │  │  HTTP API   │  │              Pipeline Orchestrator               │  │
 //! │  │  (axum)     │  │  ┌─────────┐  ┌─────────┐  ┌─────────────────┐  │   │
-//! │  └──────┬──────┘  │  │ Batch   │─▶│ Prover  │─▶│    Settler      │  │   │
+//! │  └──────┬──────┘  │  │ Batch   │─▶│ Prover │─▶│    Settler      │  │ │
 //! │         │         │  │ Manager │  │(MockZK) │  │ (Mock/Solana)   │  │   │
 //! │         ▼         │  └─────────┘  └─────────┘  └─────────────────┘  │   │
 //! │  ┌─────────────────────────────────────────────────────────────────────┐│
@@ -28,7 +28,6 @@
 
 use anyhow::Result;
 use log::info;
-use std::env;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::net::TcpListener;
@@ -37,103 +36,28 @@ use tokio::sync::Mutex;
 
 use crate::api::handlers::ApiState;
 use crate::api::routes::create_router;
-use crate::sequencer::batch::BatchConfig;
-use crate::sequencer::db::RocksDbStore;
-use crate::sequencer::ingest::start_indexer;
-use crate::sequencer::pipeline::{PipelineConfig, PipelineService};
-use crate::sequencer::shielded_state::ShieldedState;
-use crate::sequencer::withdrawals::WithdrawalQueue;
+use crate::config::ZelanaConfig;
+use crate::sequencer::{
+    IndexerConfig, PipelineService, RocksDbStore, ShieldedState, WithdrawalQueue,
+    start_indexer_with_pipeline,
+};
 
 mod api;
+mod config;
 mod sequencer;
 mod storage;
-
-/// Sequencer configuration
-#[derive(Debug, Clone)]
-struct SequencerConfig {
-    /// Path to RocksDB database
-    db_path: String,
-    /// HTTP API port
-    api_port: u16,
-    /// UDP API port (Zephyr protocol)
-    udp_port: Option<u16>,
-    /// Solana WebSocket URL for deposit indexing
-    solana_ws_url: String,
-    /// Bridge program ID on Solana
-    bridge_program_id: String,
-    /// Batch configuration
-    batch: BatchConfig,
-    /// Pipeline configuration
-    pipeline: PipelineConfig,
-}
-
-impl SequencerConfig {
-    /// Load configuration from environment variables
-    fn from_env() -> Self {
-        let batch = BatchConfig {
-            max_transactions: env::var("BATCH_MAX_TXS")
-                .ok()
-                .and_then(|s| s.parse().ok())
-                .unwrap_or(100),
-            max_batch_age_secs: env::var("BATCH_MAX_AGE")
-                .ok()
-                .and_then(|s| s.parse().ok())
-                .unwrap_or(60),
-            max_shielded: env::var("BATCH_MAX_SHIELDED")
-                .ok()
-                .and_then(|s| s.parse().ok())
-                .unwrap_or(10),
-            min_transactions: 1,
-        };
-
-        // Pipeline configuration
-        let mock_prover = env::var("ZELANA_MOCK_PROVER")
-            .map(|v| v != "0" && v.to_lowercase() != "false")
-            .unwrap_or(true); // Default: use mock prover for MVP
-
-        let settlement_enabled = env::var("ZELANA_SETTLEMENT_ENABLED")
-            .map(|v| v == "1" || v.to_lowercase() == "true")
-            .unwrap_or(false); // Default: disabled for local testing
-
-        let pipeline = PipelineConfig {
-            mock_prover,
-            settlement_enabled,
-            max_settlement_retries: env::var("ZELANA_SETTLEMENT_RETRIES")
-                .ok()
-                .and_then(|s| s.parse().ok())
-                .unwrap_or(5),
-            settlement_retry_base_ms: 5000,
-            poll_interval_ms: 100,
-            batch_config: batch.clone(),
-            settler_config: None, // TODO: load from env if settlement_enabled
-        };
-
-        Self {
-            db_path: env::var("ZELANA_DB_PATH").unwrap_or_else(|_| "./zelana-db".to_string()),
-            api_port: env::var("ZELANA_API_PORT")
-                .unwrap_or_else(|_| "8080".to_string())
-                .parse()
-                .expect("invalid API port"),
-            udp_port: env::var("ZELANA_UDP_PORT")
-                .ok()
-                .and_then(|s| s.parse().ok()),
-            solana_ws_url: env::var("SOLANA_WS_URL")
-                .unwrap_or_else(|_| "wss://api.devnet.solana.com/".to_string()),
-            bridge_program_id: env::var("ZELANA_BRIDGE_PROGRAM")
-                .unwrap_or_else(|_| "11111111111111111111111111111111".to_string()),
-            batch,
-            pipeline,
-        }
-    }
-}
 
 #[tokio::main]
 async fn main() -> Result<()> {
     // Initialize logging
     env_logger::init();
 
-    // Load configuration
-    let config = SequencerConfig::from_env();
+    // Load configuration from ~/.zelana/config.toml + env vars
+    let config = ZelanaConfig::load().expect("Failed to load configuration");
+
+    // Convert to pipeline config
+    let pipeline_config = config.to_pipeline_config();
+    let batch_config = config.to_batch_config();
 
     info!("============================================");
     info!(
@@ -141,33 +65,62 @@ async fn main() -> Result<()> {
         env!("CARGO_PKG_VERSION")
     );
     info!("============================================");
-    info!("DB path           : {}", config.db_path);
-    info!("API port          : {}", config.api_port);
+    info!("DB path           : {}", config.database.path);
+    info!("API port          : {}", config.api.port);
     info!(
         "UDP port          : {}",
         config
+            .api
             .udp_port
             .map(|p| p.to_string())
             .unwrap_or_else(|| "disabled".to_string())
     );
-    info!("Solana WS         : {}", config.solana_ws_url);
-    info!("Bridge program    : {}", config.bridge_program_id);
+    info!("Solana WS         : {}", config.solana.ws_url);
+    info!("Bridge program    : {}", config.solana.bridge_program_id);
     info!("--------------------------------------------");
-    info!("Batch max txs     : {}", config.batch.max_transactions);
-    info!("Batch max age     : {}s", config.batch.max_batch_age_secs);
-    info!("Batch max shielded: {}", config.batch.max_shielded);
+    info!("Batch max txs     : {}", batch_config.max_transactions);
+    info!("Batch max age     : {}s", batch_config.max_batch_age_secs);
+    info!("Batch max shielded: {}", batch_config.max_shielded);
     info!("--------------------------------------------");
-    info!("Mock prover       : {}", config.pipeline.mock_prover);
-    info!("Settlement enabled: {}", config.pipeline.settlement_enabled);
+    info!("Mock prover       : {}", pipeline_config.mock_prover);
+    if !pipeline_config.mock_prover {
+        info!(
+            "Proving key       : {}",
+            pipeline_config
+                .proving_key_path
+                .as_deref()
+                .unwrap_or("<not set>")
+        );
+        info!(
+            "Verifying key     : {}",
+            pipeline_config
+                .verifying_key_path
+                .as_deref()
+                .unwrap_or("<not set>")
+        );
+    }
+    info!("Settlement enabled: {}", pipeline_config.settlement_enabled);
+    if pipeline_config.settlement_enabled {
+        info!("  Solana RPC      : {}", config.solana.rpc_url);
+        info!("  Bridge program  : {}", config.solana.bridge_program_id);
+        info!(
+            "  Keypair path    : {}",
+            pipeline_config
+                .sequencer_keypair_path
+                .as_deref()
+                .unwrap_or("<not set>")
+        );
+    }
     info!(
         "Settlement retries: {}",
-        config.pipeline.max_settlement_retries
+        pipeline_config.max_settlement_retries
     );
+    info!("Dev mode          : {}", config.features.dev_mode);
     info!("============================================");
 
     // Open database
-    let db = Arc::new(RocksDbStore::open(&config.db_path).expect("failed to open RocksDB"));
-    info!("Database opened at {}", config.db_path);
+    let db = Arc::new(RocksDbStore::open(&config.database.path).expect("failed to open RocksDB"));
+    info!("Database opened at {}", config.database.path);
 
     // Initialize shielded state
     let shielded_state = Arc::new(Mutex::new(
@@ -190,17 +143,17 @@ async fn main() -> Result<()> {
 
     // Start pipeline service (includes batch manager, prover, and settler)
     let pipeline_service = Arc::new(
-        PipelineService::start(db.clone(), config.pipeline.clone(), None)
+        PipelineService::start(db.clone(), pipeline_config.clone(), None)
             .expect("failed to start pipeline service"),
     );
     info!(
         "Pipeline service started (prover: {}, settlement: {})",
-        if config.pipeline.mock_prover {
+        if pipeline_config.mock_prover {
             "mock"
         } else {
             "groth16"
         },
-        if config.pipeline.settlement_enabled {
+        if pipeline_config.settlement_enabled {
             "enabled"
         } else {
             "mock"
@@ -208,43 +161,37 @@ async fn main() -> Result<()> {
     );
 
     // Initialize fast withdrawal service (optional)
-    let fast_withdraw = if env::var("FAST_WITHDRAW_ENABLED").is_ok() {
-        use crate::sequencer::fast_withdrawals::{FastWithdrawConfig, FastWithdrawManager};
+    let fast_withdraw = if config.features.fast_withdrawals {
+        use crate::sequencer::{FastWithdrawConfig, FastWithdrawManager};
         let fw = Arc::new(FastWithdrawManager::new(FastWithdrawConfig::default()));
         info!("Fast withdrawal service enabled");
         Some(fw)
     } else {
-        info!("Fast withdrawal service disabled (set FAST_WITHDRAW_ENABLED to enable)");
+        info!("Fast withdrawal service disabled");
         None
     };
 
     // Initialize threshold encryption mempool (optional)
-    let threshold_mempool = if env::var("THRESHOLD_ENABLED").is_ok() {
-        use crate::sequencer::threshold_mempool::{
+    let threshold_mempool = if config.features.threshold_encryption {
+        use crate::sequencer::{
             EncryptedMempoolConfig, ThresholdMempoolManager, create_test_committee,
         };
 
-        let threshold: usize = env::var("THRESHOLD_K")
-            .ok()
-            .and_then(|s| s.parse().ok())
-            .unwrap_or(2);
-        let total: usize = env::var("THRESHOLD_N")
-            .ok()
-            .and_then(|s| s.parse().ok())
-            .unwrap_or(3);
+        let threshold = config.features.threshold_k;
+        let total = config.features.threshold_n;
 
-        let config = EncryptedMempoolConfig {
+        let mempool_config = EncryptedMempoolConfig {
             enabled: true,
             threshold,
             total_members: total,
             max_pending: 1000,
         };
 
-        let manager = Arc::new(ThresholdMempoolManager::new(config));
+        let manager = Arc::new(ThresholdMempoolManager::new(mempool_config));
 
         // For development: create a test committee
         // In production, this would be loaded from configuration or DKG
-        if env::var("THRESHOLD_DEV").is_ok() {
+        if config.features.threshold_dev {
             let (committee, local_members) = create_test_committee(threshold, total);
             manager.initialize_committee(committee).await;
             // Set this node as the first committee member (for dev)
@@ -262,7 +209,7 @@ async fn main() -> Result<()> {
 
         Some(manager)
     } else {
-        info!("Threshold encryption disabled (set THRESHOLD_ENABLED to enable)");
+        info!("Threshold encryption disabled");
         None
     };
 
@@ -275,21 +222,22 @@ async fn main() -> Result<()> {
         fast_withdraw,
         threshold_mempool,
         start_time: std::time::Instant::now(),
+        dev_mode: config.features.dev_mode,
     };
 
     // Create and start HTTP server
     let router = create_router(api_state.clone());
-    let addr = SocketAddr::from(([0, 0, 0, 0], config.api_port));
+    let addr = SocketAddr::from(([0, 0, 0, 0], config.api.port));
     let listener = TcpListener::bind(addr).await?;
     info!("HTTP API listening on {}", addr);
 
     // Spawn HTTP server
-    let http_handle = tokio::spawn(async move {
+    let _http_handle = tokio::spawn(async move {
         axum::serve(listener, router).await.unwrap();
     });
 
     // Spawn Zephyr UDP server if configured
-    if let Some(udp_port) = config.udp_port {
+    if let Some(udp_port) = config.api.udp_port {
         use crate::api::{UdpServerConfig, start_udp_server};
 
         let udp_config = UdpServerConfig {
@@ -304,23 +252,34 @@ async fn main() -> Result<()> {
         info!("Zephyr UDP server listening on 0.0.0.0:{}", udp_port);
     }
 
-    // Spawn Solana indexer for deposits
+    // Spawn Solana indexer for deposits (with pipeline integration)
     {
         let db_clone = db.clone();
-        let ws_url = config.solana_ws_url.clone();
-        let program_id = config.bridge_program_id.clone();
+        let pipeline_clone = pipeline_service.clone();
+        let indexer_config = IndexerConfig {
+            ws_url: config.solana.ws_url.clone(),
+            rpc_url: config.solana.rpc_url.clone(),
+            bridge_program_id: config.solana.bridge_program_id.clone(),
+            fetch_historical: true,
+            max_historical_slots: 10000,
+        };
 
         tokio::spawn(async move {
-            start_indexer(db_clone, ws_url, program_id).await;
+            start_indexer_with_pipeline(db_clone, indexer_config, pipeline_clone).await;
         });
     }
-    info!("Deposit indexer started");
+    info!("Deposit indexer started (finalized commitment, pipeline routing)");
 
     info!("============================================");
     info!("  Zelana sequencer is ready!");
-    info!("  HTTP API: http://0.0.0.0:{}", config.api_port);
-    if let Some(udp_port) = config.udp_port {
+    info!("  HTTP API: http://0.0.0.0:{}", config.api.port);
+    if let Some(udp_port) = config.api.udp_port {
         info!("  UDP API:  udp://0.0.0.0:{}", udp_port);
+    }
+    if config.features.dev_mode {
+        info!("  Dev endpoints enabled:");
+        info!("    POST /dev/deposit - Simulate L1 deposit");
+        info!("    POST /dev/seal    - Force seal current batch");
     }
     info!("============================================");
 
@@ -328,11 +287,21 @@ async fn main() -> Result<()> {
     signal::ctrl_c().await?;
     info!("Shutdown signal received");
 
-    // Graceful shutdown
+    // Graceful shutdown with timeout
     info!("Shutting down pipeline service...");
-    if let Err(e) = pipeline_service.shutdown().await {
-        log::error!("Error shutting down pipeline service: {}", e);
+    let shutdown_timeout = tokio::time::timeout(
+        std::time::Duration::from_secs(30),
+        pipeline_service.shutdown(),
+    );
+
+    match shutdown_timeout.await {
+        Ok(Ok(())) => info!("Pipeline service shutdown complete"),
+        Ok(Err(e)) => log::error!("Error shutting down pipeline service: {}", e),
+        Err(_) => log::warn!("Pipeline shutdown timed out after 30s"),
     }
+
+    // Brief delay to allow async tasks to clean up
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
     info!("Zelana sequencer stopped");
     Ok(())

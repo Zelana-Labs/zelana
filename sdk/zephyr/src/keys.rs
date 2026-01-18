@@ -26,6 +26,7 @@ pub struct SessionKeys {
     base_iv: [u8; 12],
     /// We track the sequence number to prevent replay attacks
     tx_counter: u64,
+    #[allow(dead_code)] // Reserved for future RX validation
     rx_counter: u64,
 }
 

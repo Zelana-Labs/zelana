@@ -252,7 +252,7 @@ impl NetworkConfig {
             name: "devnet".to_string(),
             rpc_url: "https://api.devnet.solana.com".to_string(),
             ws_url: "wss://api.devnet.solana.com".to_string(),
-            bridge_program_id: "95sWqtU9fdm19cvQYu94iKijRuYAv3wLqod1pcsSfYth".to_string(),
+            bridge_program_id: "8SE6gCijcFQixvDQqWu29mCm9AydN8hcwWh2e2Q6RQgE".to_string(),
         }
     }
 

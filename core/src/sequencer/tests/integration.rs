@@ -9,7 +9,9 @@ use zelana_account::{AccountId, AccountState};
 use zelana_block::HEADER_MAGIC;
 use zelana_transaction::{SignedTransaction, TransactionData};
 
-use crate::sequencer::{db::RocksDbStore, executor::Executor, session::Session};
+use super::session::Session;
+use crate::sequencer::RocksDbStore;
+use crate::sequencer::execution::executor::Executor;
 
 /// Helpers
 

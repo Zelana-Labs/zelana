@@ -7,12 +7,12 @@ use crate::helpers::{Initialized, StateDefinition};
 #[repr(C)]
 pub struct DepositReceipt {
     pub depositor: Pubkey,
-    domain:Pubkey,
+    domain: Pubkey,
     pub amount: u64,
     pub nonce: u64,
     pub ts: i64,
     pub bump: u8,
-    pub is_initialized : u8,
+    pub is_initialized: u8,
     pub _padding: [u8; 6],
 }
 

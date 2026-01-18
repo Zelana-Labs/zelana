@@ -1,20 +1,21 @@
 use pinocchio::{
+    ProgramResult,
     account_info::AccountInfo,
     instruction::{Seed, Signer},
     program_error::ProgramError,
-    pubkey::{ Pubkey},
-    sysvars::{rent::Rent, Sysvar},
-    ProgramResult,
+    pubkey::Pubkey,
+    sysvars::{Sysvar, rent::Rent},
 };
 use pinocchio_system::instructions::CreateAccount;
 
 use crate::{
-    helpers::{check_signer, load_acc_mut_unchecked, load_ix_data, StateDefinition,
-    utils::{derive_config_pda,derive_vault_pda}},
+    ID,
+    helpers::{
+        StateDefinition, check_signer, load_acc_mut_unchecked, load_ix_data,
+        utils::{derive_config_pda, derive_vault_pda},
+    },
     instruction::InitParams,
     state::{Config, Vault},
-    ID,
-    
 };
 
 pub fn process_initialize(
@@ -35,16 +36,13 @@ pub fn process_initialize(
         return Err(ProgramError::InvalidInstructionData);
     }
 
-
-    let (expected_config_pda, config_bump) =
-        derive_config_pda(&ID, &params.domain);
+    let (expected_config_pda, config_bump) = derive_config_pda(&ID, &params.domain);
 
     if config_account.key() != &expected_config_pda {
         return Err(ProgramError::InvalidSeeds);
     }
 
-    let (expected_vault_pda, vault_bump) =
-        derive_vault_pda(&ID, &params.domain);
+    let (expected_vault_pda, vault_bump) = derive_vault_pda(&ID, &params.domain);
 
     if vault_account.key() != &expected_vault_pda {
         return Err(ProgramError::InvalidSeeds);
@@ -99,15 +97,10 @@ pub fn process_initialize(
     }
     .invoke_signed(&signers)?;
 
-
     let config_data = &mut config_account.try_borrow_mut_data()?;
     let config_state = unsafe { load_acc_mut_unchecked::<Config>(config_data)? };
 
-    config_state.new(
-        params.sequencer_authority,
-        params.domain,
-        config_bump,
-    )?;
+    config_state.new(params.sequencer_authority, params.domain, config_bump)?;
 
     let vault_account = &mut vault_account.try_borrow_mut_data()?;
     let vault_state = unsafe { load_acc_mut_unchecked::<Vault>(vault_account)? };

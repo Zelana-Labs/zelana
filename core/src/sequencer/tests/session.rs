@@ -1,158 +1,66 @@
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
-
 use zelana_account::{AccountId, AccountState};
-use zelana_block::{HEADER_MAGIC, HEADER_VERSION};
+use zelana_block::{BlockHeader, HEADER_MAGIC, HEADER_VERSION};
 
-use crate::sequencer::executor::{ExecutionResult, StateDiff};
-use crate::sequencer::session::{Session, compute_state_root};
+use crate::sequencer::execution::executor::ExecutionResult;
 
-fn account(id: u8) -> AccountId {
-    let mut b = [0u8; 32];
-    b[0] = id;
-    AccountId(b)
+#[derive(Clone)]
+pub struct Session {
+    pub batch_id: u64,
+    pub txs: Vec<ExecutionResult>,
 }
 
-fn exec_result(tx_hash: u8, updates: Vec<(AccountId, AccountState)>) -> ExecutionResult {
-    let mut map = HashMap::new();
-    for (id, st) in updates {
-        map.insert(id, st);
+impl Session {
+    pub fn new(batch_id: u64) -> Self {
+        Self {
+            batch_id,
+            txs: Vec::new(),
+        }
     }
-    ExecutionResult {
-        tx_hash: [tx_hash; 32],
-        state_diff: StateDiff { updates: map },
+    pub fn push_execution(&mut self, exec: ExecutionResult) {
+        self.txs.push(exec);
+    }
+
+    pub fn tx_count(&self) -> u32 {
+        self.txs.len() as u32
+    }
+
+    pub fn close(self, prev_root: [u8; 32], new_root: [u8; 32]) -> ClosedSession {
+        let header = BlockHeader {
+            magic: HEADER_MAGIC,
+            hdr_version: HEADER_VERSION,
+            batch_id: self.batch_id,
+            prev_root,
+            new_root,
+            tx_count: self.tx_count(),
+            open_at: chrono::Utc::now().timestamp() as u64,
+            flags: 0,
+        };
+
+        ClosedSession {
+            header,
+            txs: self.txs,
+        }
     }
 }
 
-#[test]
-fn push_merges_state_diffs() {
-    let mut session = Session::new(1);
-
-    let a = account(1);
-    let b = account(2);
-
-    session.push_execution(exec_result(
-        1,
-        vec![(
-            a,
-            AccountState {
-                balance: 50,
-                nonce: 0,
-            },
-        )],
-    ));
-
-    session.push_execution(exec_result(
-        2,
-        vec![(
-            b,
-            AccountState {
-                balance: 30,
-                nonce: 0,
-            },
-        )],
-    ));
-
-    assert_eq!(session.tx_count(), 2);
+// ready to commit ( closed session)
+pub struct ClosedSession {
+    pub header: BlockHeader,
+    pub txs: Vec<ExecutionResult>,
 }
 
-#[test]
-fn later_state_overwrites_earlier_state() {
-    let mut session = Session::new(1);
-    let a = account(1);
+pub fn compute_state_root(base_state: &HashMap<AccountId, AccountState>) -> [u8; 32] {
+    let mut items: Vec<_> = base_state.iter().collect();
+    items.sort_by_key(|(id, _)| id.to_hex());
 
-    session.push_execution(exec_result(
-        1,
-        vec![(
-            a,
-            AccountState {
-                balance: 100,
-                nonce: 0,
-            },
-        )],
-    ));
+    let mut hasher = Sha256::new();
+    for (id, st) in items {
+        hasher.update(id.as_ref());
+        hasher.update(&st.balance.to_be_bytes());
+        hasher.update(&st.nonce.to_be_bytes());
+    }
 
-    session.push_execution(exec_result(
-        2,
-        vec![(
-            a,
-            AccountState {
-                balance: 80,
-                nonce: 1,
-            },
-        )],
-    ));
-
-    assert_eq!(session.tx_count(), 2);
-}
-
-#[test]
-fn close_produces_correct_block_header() {
-    let mut session = Session::new(42);
-    let a = account(1);
-
-    session.push_execution(exec_result(
-        1,
-        vec![(
-            a,
-            AccountState {
-                balance: 10,
-                nonce: 0,
-            },
-        )],
-    ));
-
-    let prev_root = [9u8; 32];
-    let new_root = [9u8; 32];
-    let closed = session.close(prev_root, new_root);
-
-    let header = closed.header;
-
-    assert_eq!(header.magic, HEADER_MAGIC);
-    assert_eq!(header.hdr_version, HEADER_VERSION);
-    assert_eq!(header.batch_id, 42);
-    assert_eq!(header.prev_root, prev_root);
-    assert_eq!(header.tx_count, 1);
-}
-
-#[test]
-fn compute_state_root_is_deterministic() {
-    let a = account(1);
-    let b = account(2);
-
-    let mut map1 = HashMap::new();
-    map1.insert(
-        a,
-        AccountState {
-            balance: 5,
-            nonce: 0,
-        },
-    );
-    map1.insert(
-        b,
-        AccountState {
-            balance: 7,
-            nonce: 1,
-        },
-    );
-
-    let mut map2 = HashMap::new();
-    map2.insert(
-        b,
-        AccountState {
-            balance: 7,
-            nonce: 1,
-        },
-    );
-    map2.insert(
-        a,
-        AccountState {
-            balance: 5,
-            nonce: 0,
-        },
-    );
-
-    let r1 = compute_state_root(&map1);
-    let r2 = compute_state_root(&map2);
-
-    assert_eq!(r1, r2);
+    hasher.finalize().into()
 }

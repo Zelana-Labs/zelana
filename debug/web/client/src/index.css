@@ -1,0 +1,104 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Custom scrollbar for dark theme */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #111111;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #333333;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #444444;
+}
+
+/* Selection color */
+::selection {
+  background: rgba(0, 255, 136, 0.3);
+}
+
+/* Custom utilities */
+@layer utilities {
+  .text-gradient {
+    @apply bg-clip-text text-transparent bg-gradient-to-r from-accent-green to-accent-cyan;
+  }
+}
+
+/* Animations */
+@keyframes pulse-green {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+.animate-pulse-green {
+  animation: pulse-green 2s ease-in-out infinite;
+}
+
+/* Table styles */
+.data-table {
+  @apply w-full text-sm;
+}
+
+.data-table th {
+  @apply text-left text-text-secondary font-medium px-4 py-3 border-b border-border;
+}
+
+.data-table td {
+  @apply px-4 py-3 border-b border-border/50;
+}
+
+.data-table tr:hover td {
+  @apply bg-bg-hover;
+}
+
+/* Card styles */
+.card {
+  @apply bg-bg-secondary border border-border rounded-lg;
+}
+
+.card-header {
+  @apply px-4 py-3 border-b border-border flex items-center justify-between;
+}
+
+.card-body {
+  @apply p-4;
+}
+
+/* Badge styles */
+.badge {
+  @apply inline-flex items-center px-2 py-0.5 rounded text-xs font-medium;
+}
+
+.badge-success {
+  @apply bg-accent-green/20 text-accent-green;
+}
+
+.badge-warning {
+  @apply bg-accent-yellow/20 text-accent-yellow;
+}
+
+.badge-error {
+  @apply bg-accent-red/20 text-accent-red;
+}
+
+.badge-info {
+  @apply bg-accent-blue/20 text-accent-blue;
+}
+
+.badge-purple {
+  @apply bg-accent-purple/20 text-accent-purple;
+}

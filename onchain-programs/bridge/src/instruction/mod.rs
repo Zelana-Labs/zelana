@@ -83,7 +83,37 @@ impl DataLen for SubmitBatchHeader {
     const LEN: usize = core::mem::size_of::<SubmitBatchHeader>();
 }
 
+/// Groth16 proof structure matching verifier program
+/// pi_a (G1): 64 bytes, pi_b (G2): 128 bytes, pi_c (G1): 64 bytes
+#[repr(C)]
+#[derive(Pod, Zeroable, Clone, Copy, Debug, PartialEq)]
+pub struct Groth16Proof {
+    pub pi_a: [u8; 64],
+    pub pi_b: [u8; 128],
+    pub pi_c: [u8; 64],
+}
 
+impl DataLen for Groth16Proof {
+    const LEN: usize = core::mem::size_of::<Groth16Proof>();
+}
+
+/// Batch public inputs for ZK verification
+/// These must match what the circuit expects
+#[repr(C)]
+#[derive(Pod, Zeroable, Clone, Copy, Debug, PartialEq)]
+pub struct BatchPublicInputs {
+    pub pre_state_root: [u8; 32],
+    pub post_state_root: [u8; 32],
+    pub pre_shielded_root: [u8; 32],
+    pub post_shielded_root: [u8; 32],
+    pub withdrawal_root: [u8; 32],
+    pub batch_hash: [u8; 32],
+    pub batch_id: u64,
+}
+
+impl DataLen for BatchPublicInputs {
+    const LEN: usize = core::mem::size_of::<BatchPublicInputs>();
+}
 
 mod idl_gen {
     use super::{DepositParams, InitParams, SubmitBatchHeader, WithdrawAttestedParams};

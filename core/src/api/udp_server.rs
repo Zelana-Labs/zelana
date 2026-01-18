@@ -1,3 +1,4 @@
+#![allow(dead_code)] // UDP server for Zephyr protocol (optional transport)
 //! Zephyr UDP Server
 //!
 //! Low-latency UDP transport for transaction submission using the Zephyr protocol.
@@ -22,7 +23,7 @@ use x25519_dalek::{PublicKey, StaticSecret};
 
 use zelana_transaction::TransactionType;
 use zephyr::keys::SessionKeys;
-use zephyr::packet::{KIND_APP_DATA, KIND_CLIENT_HELLO, KIND_SERVER_HELLO, Packet};
+use zephyr::packet::{KIND_SERVER_HELLO, Packet};
 
 use super::handlers::ApiState;
 

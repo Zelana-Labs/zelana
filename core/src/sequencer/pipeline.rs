@@ -1,3 +1,4 @@
+#![allow(dead_code)] // seal/pause/resume reserved for operator controls
 //! Pipeline Orchestrator
 //!
 //! Connects BatchService, Prover, and Settler into a complete pipeline.
@@ -27,32 +28,39 @@
 //! ```
 
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result};
 use tokio::sync::{Mutex, mpsc, oneshot};
 use tracing::{debug, error, info, warn};
 
-use crate::sequencer::batch::{Batch, BatchConfig, BatchManager, BatchManagerStats, BatchState};
-use crate::sequencer::db::RocksDbStore;
-use crate::sequencer::prover::{
-    BatchProof, BatchProver, BatchPublicInputs, BatchWitness, MockProver, build_public_inputs,
+use crate::api::types::{BatchStatus, BatchSummary, TxStatus};
+use crate::sequencer::bridge::withdrawals::{
+    TrackedWithdrawal, WithdrawalState, build_withdrawal_merkle_root,
+};
+use crate::sequencer::execution::batch::{BatchConfig, BatchManager, BatchManagerStats};
+use crate::sequencer::execution::tx_router::TxResultType;
+use crate::sequencer::settlement::prover::compute_batch_hash;
+use crate::sequencer::settlement::prover::{
+    BatchProof, BatchProver, BatchPublicInputs, Groth16Prover, MockProver, build_public_inputs,
     build_witness,
 };
-use crate::sequencer::settler::{MockSettler, SettlementResult, SettlerConfig, SettlerService};
+use crate::sequencer::settlement::settler::{
+    MockSettler, SettlementResult, SettlerConfig, SettlerService,
+};
+use crate::sequencer::storage::db::RocksDbStore;
 use zelana_transaction::TransactionType;
 
-// ============================================================================
 // Configuration
-// ============================================================================
 
 /// Pipeline configuration
 #[derive(Debug, Clone)]
 pub struct PipelineConfig {
-    /// Use MockProver instead of real Groth16 (default: true for MVP)
-    pub mock_prover: bool,
-    /// Enable L1 settlement (default: false for local testing)
+    pub mock_prover: bool, // switch between mockprover and groth16
+    pub proving_key_path: Option<String>,
+    pub verifying_key_path: Option<String>,
     pub settlement_enabled: bool,
+    pub sequencer_keypair_path: Option<String>,
     /// Maximum retry attempts for settlement
     pub max_settlement_retries: u32,
     /// Base delay between settlement retries (exponential backoff)
@@ -63,25 +71,29 @@ pub struct PipelineConfig {
     pub batch_config: BatchConfig,
     /// Settler configuration (if settlement enabled)
     pub settler_config: Option<SettlerConfig>,
+    /// Dev mode - enables immediate state commit on seal (bypasses prove/settle)
+    pub dev_mode: bool,
 }
 
 impl Default for PipelineConfig {
     fn default() -> Self {
         Self {
             mock_prover: true,
+            proving_key_path: None,
+            verifying_key_path: None,
             settlement_enabled: false,
+            sequencer_keypair_path: None,
             max_settlement_retries: 5,
             settlement_retry_base_ms: 5000,
             poll_interval_ms: 100,
             batch_config: BatchConfig::default(),
             settler_config: None,
+            dev_mode: false,
         }
     }
 }
 
-// ============================================================================
 // Pipeline State
-// ============================================================================
 
 /// Pipeline operational state
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -115,16 +127,25 @@ pub struct PipelineStats {
     pub settler_busy: bool,
 }
 
-// ============================================================================
+/// Result of sealing a batch (for dev/testing)
+#[derive(Debug, Clone)]
+pub struct SealResult {
+    /// Batch ID that was sealed
+    pub batch_id: u64,
+    /// Number of transactions in the batch
+    pub tx_count: usize,
+}
+
 // Pipeline Commands
-// ============================================================================
 
 /// Commands for the pipeline service
 pub enum PipelineCommand {
     /// Submit a transaction
     Submit(TransactionType, oneshot::Sender<Result<()>>),
-    /// Force seal the current batch
+    /// Force seal the current batch (returns batch_id only)
     Seal(oneshot::Sender<Result<Option<u64>>>),
+    /// Force seal with extended info (for dev mode)
+    ForceSeal(oneshot::Sender<Result<SealResult>>),
     /// Get pipeline statistics
     Stats(oneshot::Sender<PipelineStats>),
     /// Pause the pipeline
@@ -135,25 +156,18 @@ pub enum PipelineCommand {
     Shutdown,
 }
 
-// ============================================================================
 // Pipeline Orchestrator
-// ============================================================================
 
 /// The pipeline orchestrator coordinates batch proving and settlement
 pub struct PipelineOrchestrator {
+    db: Arc<RocksDbStore>,
     /// Batch manager (shared with command handler)
     batch_manager: Arc<Mutex<BatchManager>>,
-    /// Prover implementation
     prover: Arc<dyn BatchProver>,
-    /// Mock settler (for local testing)
-    mock_settler: Option<Arc<Mutex<MockSettler>>>,
-    /// Real settler service (for L1 settlement)
-    settler_service: Option<Arc<SettlerService>>,
-    /// Configuration
+    mock_settler: Option<Arc<Mutex<MockSettler>>>, // only for local tests 
+    settler_service: Option<Arc<SettlerService>>, // settlement service 
     config: PipelineConfig,
-    /// Current pipeline state
     state: PipelineState,
-    /// Statistics
     batches_proved: u64,
     batches_settled: u64,
     last_proved_batch: Option<u64>,
@@ -173,32 +187,88 @@ impl PipelineOrchestrator {
         config: PipelineConfig,
         settler_service: Option<SettlerService>,
     ) -> Result<Self> {
-        let batch_manager = BatchManager::new(db, config.batch_config.clone())?;
+        let batch_manager = BatchManager::new(db.clone(), config.batch_config.clone())?;
 
         // Create prover based on config
         let prover: Arc<dyn BatchProver> = if config.mock_prover {
+            info!("Using MockProver for batch proving");
             Arc::new(MockProver::new())
         } else {
-            // For real prover, we'd load keys from files
-            // For now, fall back to mock
-            warn!("Real Groth16 prover not configured, using MockProver");
-            Arc::new(MockProver::new())
+            // Try to load real Groth16 prover from key files
+            match (&config.proving_key_path, &config.verifying_key_path) {
+                (Some(pk_path), Some(vk_path)) => {
+                    info!("Loading Groth16 prover from key files");
+                    info!("  Proving key:   {}", pk_path);
+                    info!("  Verifying key: {}", vk_path);
+                    match Groth16Prover::from_files(pk_path, vk_path) {
+                        Ok(prover) => {
+                            info!("Groth16 prover initialized successfully");
+                            Arc::new(prover)
+                        }
+                        Err(e) => {
+                            warn!(
+                                "Failed to load Groth16 prover: {}. Falling back to MockProver",
+                                e
+                            );
+                            Arc::new(MockProver::new())
+                        }
+                    }
+                }
+                _ => {
+                    warn!(
+                        "Real Groth16 prover requested but key paths not configured. \
+                        Set ZL_PROVING_KEY and ZL_VERIFYING_KEY environment variables. \
+                        Using MockProver instead."
+                    );
+                    Arc::new(MockProver::new())
+                }
+            }
         };
 
         // Create settler based on config
         let (mock_settler, settler_svc) = if config.settlement_enabled {
             if let Some(svc) = settler_service {
+                // Use externally provided settler service
+                info!("Using externally provided SettlerService for L1 settlement");
                 (None, Some(Arc::new(svc)))
+            } else if let (Some(settler_cfg), Some(keypair_path)) =
+                (&config.settler_config, &config.sequencer_keypair_path)
+            {
+                // Create settler from config
+                info!("Creating SettlerService from configuration");
+                info!("  RPC URL:        {}", settler_cfg.rpc_url);
+                info!("  Bridge program: {}", settler_cfg.bridge_program_id);
+                info!("  Keypair path:   {}", keypair_path);
+
+                match Self::load_keypair_and_create_settler(settler_cfg.clone(), keypair_path) {
+                    Ok(svc) => {
+                        info!("SettlerService initialized successfully");
+                        (None, Some(Arc::new(svc)))
+                    }
+                    Err(e) => {
+                        warn!(
+                            "Failed to create SettlerService: {}. Using MockSettler instead.",
+                            e
+                        );
+                        (Some(Arc::new(Mutex::new(MockSettler::new()))), None)
+                    }
+                }
             } else {
-                warn!("Settlement enabled but no settler service provided, using MockSettler");
+                warn!(
+                    "Settlement enabled but settler config or keypair path not provided. \
+                    Set ZL_SEQUENCER_KEYPAIR and ensure settler config is complete. \
+                    Using MockSettler instead."
+                );
                 (Some(Arc::new(Mutex::new(MockSettler::new()))), None)
             }
         } else {
             // Local testing mode: use mock settler
+            debug!("Settlement disabled, using MockSettler for local testing");
             (Some(Arc::new(Mutex::new(MockSettler::new()))), None)
         };
 
         Ok(Self {
+            db,
             batch_manager: Arc::new(Mutex::new(batch_manager)),
             prover,
             mock_settler,
@@ -213,6 +283,24 @@ impl PipelineOrchestrator {
             settling_batch: None,
             settlement_retries: 0,
         })
+    }
+
+    /// Load keypair from file and create SettlerService
+    fn load_keypair_and_create_settler(
+        settler_config: SettlerConfig,
+        keypair_path: &str,
+    ) -> Result<SettlerService> {
+        use solana_sdk::signer::Signer;
+        use solana_sdk::signer::keypair::read_keypair_file;
+
+        // Read keypair file (supports JSON array format from solana-keygen)
+        let keypair = read_keypair_file(keypair_path).map_err(|e| {
+            anyhow::anyhow!("Failed to read keypair file '{}': {}", keypair_path, e)
+        })?;
+
+        info!("Loaded sequencer keypair: {}", keypair.pubkey());
+
+        SettlerService::new(settler_config, keypair)
     }
 
     /// Get a handle to the batch manager
@@ -291,40 +379,111 @@ impl PipelineOrchestrator {
 
         let mut manager = self.batch_manager.lock().await;
 
-        // Find next batch ready for settlement
+        // Find next batch ready for settlement and extract withdrawal info
         let batch_to_settle = manager.next_for_settlement().map(|b| {
             let batch_id = b.id;
+            let tx_count = b.transactions.len();
+            let post_state_root = b.post_state_root.unwrap_or([0u8; 32]);
+            let post_shielded_root = b.post_shielded_root.unwrap_or([0u8; 32]);
+
+            // Collect tx hashes for status update
+            let tx_hashes: Vec<[u8; 32]> = b.results.iter().map(|r| r.tx_hash).collect();
+
+            // Extract withdrawals from transaction results
+            let withdrawals: Vec<TrackedWithdrawal> = b
+                .results
+                .iter()
+                .filter_map(|r| {
+                    if let TxResultType::Withdrawal {
+                        from,
+                        to_l1,
+                        amount,
+                    } = &r.tx_type
+                    {
+                        if r.success {
+                            Some(TrackedWithdrawal {
+                                tx_hash: r.tx_hash,
+                                from: from.clone(),
+                                to_l1_address: *to_l1,
+                                amount: *amount,
+                                l2_nonce: 0, // Not tracked in result, but not needed for L1
+                                state: WithdrawalState::InBatch { batch_id },
+                                created_at: std::time::SystemTime::now()
+                                    .duration_since(std::time::UNIX_EPOCH)
+                                    .unwrap_or_default()
+                                    .as_secs(),
+                                batch_id: Some(batch_id),
+                            })
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+
+            // Compute withdrawal merkle root
+            let withdrawal_root = build_withdrawal_merkle_root(&withdrawals);
+
+            // Compute batch hash
+            let batch_hash = compute_batch_hash(&b.transactions);
+
             let proof = BatchProof {
                 public_inputs: BatchPublicInputs {
                     pre_state_root: b.pre_state_root,
-                    post_state_root: b.post_state_root.unwrap_or([0u8; 32]),
+                    post_state_root,
                     pre_shielded_root: b.pre_shielded_root,
-                    post_shielded_root: b.post_shielded_root.unwrap_or([0u8; 32]),
-                    withdrawal_root: [0u8; 32], // TODO: withdrawal root
-                    batch_hash: [0u8; 32],      // TODO: batch hash
+                    post_shielded_root,
+                    withdrawal_root,
+                    batch_hash,
                     batch_id,
                 },
                 proof_bytes: b.proof.clone().unwrap_or_default(),
                 proving_time_ms: 0,
             };
-            (batch_id, proof)
+            (
+                batch_id,
+                proof,
+                withdrawals,
+                tx_count,
+                tx_hashes,
+                post_state_root,
+                post_shielded_root,
+            )
         });
 
         drop(manager);
 
-        let Some((batch_id, proof)) = batch_to_settle else {
+        let Some((
+            batch_id,
+            proof,
+            withdrawals,
+            tx_count,
+            tx_hashes,
+            post_state_root,
+            post_shielded_root,
+        )) = batch_to_settle
+        else {
             return Ok(false);
         };
 
-        info!(batch_id, "Starting settlement");
+        let withdrawal_count = withdrawals.len();
+        info!(batch_id, withdrawal_count, "Starting settlement");
         self.settling_batch = Some(batch_id);
 
         // Calculate prev_batch_id (the batch before this one)
         let prev_batch_id = if batch_id > 1 { batch_id - 1 } else { 0 };
 
-        // Settle using mock or real settler
+        // Settle using mock or real settler (with withdrawals)
         let result = if let Some(ref settler_svc) = self.settler_service {
-            settler_svc.submit(&proof, prev_batch_id).await
+            if withdrawals.is_empty() {
+                settler_svc.submit(&proof, prev_batch_id).await
+            } else {
+                settler_svc
+                    .submit_with_withdrawals(&proof, prev_batch_id, &withdrawals)
+                    .await
+            }
         } else if let Some(ref mock_settler) = self.mock_settler {
             let mut settler = mock_settler.lock().await;
             Ok(settler.submit(&proof))
@@ -343,16 +502,84 @@ impl PipelineOrchestrator {
                 info!(
                     batch_id,
                     tx_sig = %settlement.tx_signature,
+                    withdrawal_count,
                     "Batch settled successfully"
                 );
 
                 // Update batch state
                 let mut manager = self.batch_manager.lock().await;
-                manager.batch_settled(batch_id, settlement.tx_signature)?;
+                manager.batch_settled(batch_id, settlement.tx_signature.clone())?;
 
                 // For MVP, immediately finalize (no challenge period)
                 let _diff = manager.batch_finalized(batch_id)?;
                 drop(manager);
+
+                // Store batch summary for API queries
+                let now = SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .map(|d| d.as_secs())
+                    .unwrap_or(0);
+
+                let batch_summary = BatchSummary {
+                    batch_id,
+                    tx_count,
+                    state_root: hex::encode(post_state_root),
+                    shielded_root: hex::encode(post_shielded_root),
+                    l1_tx_sig: Some(settlement.tx_signature.clone()),
+                    status: BatchStatus::Settled,
+                    created_at: now, // Approximation - could track actual creation time
+                    settled_at: Some(now),
+                };
+                info!("{:?}", batch_summary);
+                if let Err(e) = self.db.store_batch_summary(&batch_summary) {
+                    warn!(batch_id, error = %e, "Failed to store batch summary");
+                }
+
+                // Update all transaction statuses to Settled
+                for tx_hash in &tx_hashes {
+                    if let Err(e) =
+                        self.db
+                            .update_tx_status(tx_hash, TxStatus::Settled, Some(batch_id))
+                    {
+                        warn!(tx_hash = %hex::encode(&tx_hash[..8]), error = %e, "Failed to update tx status");
+                    }
+                }
+
+                // Execute withdrawals on L1 (transfer SOL from vault to recipients)
+                if !withdrawals.is_empty() {
+                    if let Some(ref settler_svc) = self.settler_service {
+                        info!(batch_id, withdrawal_count, "Executing withdrawals on L1");
+
+                        let results = settler_svc
+                            .execute_withdrawals_batched(batch_id, &withdrawals)
+                            .await;
+
+                        // Log results
+                        let succeeded = results.iter().filter(|r| r.success).count();
+                        let failed = results.iter().filter(|r| !r.success).count();
+
+                        if failed > 0 {
+                            warn!(batch_id, succeeded, failed, "Some withdrawals failed");
+                            // Log individual failures
+                            for r in results.iter().filter(|r| !r.success) {
+                                warn!(
+                                    tx_hash = %hex::encode(&r.tx_hash[..8]),
+                                    error = ?r.error,
+                                    retries = r.retries,
+                                    "Withdrawal failed"
+                                );
+                            }
+                        } else {
+                            info!(batch_id, succeeded, "All withdrawals executed successfully");
+                        }
+                    } else {
+                        // Mock mode - just log
+                        debug!(
+                            batch_id,
+                            withdrawal_count, "Withdrawals skipped (mock settler)"
+                        );
+                    }
+                }
 
                 self.batches_settled += 1;
                 self.last_settled_batch = Some(batch_id);
@@ -401,6 +628,14 @@ impl PipelineOrchestrator {
     pub async fn tick(&mut self) -> Result<()> {
         if self.state != PipelineState::Running {
             return Ok(());
+        }
+
+        // Check for batch timeout and seal if needed
+        {
+            let mut manager = self.batch_manager.lock().await;
+            if let Ok(Some(batch_id)) = manager.check_timeout() {
+                info!(batch_id, "Batch sealed by timeout");
+            }
         }
 
         // Try proving (non-blocking check, blocking prove)
@@ -453,9 +688,7 @@ impl PipelineOrchestrator {
     }
 }
 
-// ============================================================================
 // Pipeline Service
-// ============================================================================
 
 /// Async service that runs the pipeline
 pub struct PipelineService {
@@ -491,6 +724,23 @@ impl PipelineService {
                                 let result = batch_manager.lock().await.seal_current_batch();
                                 let _ = reply.send(result);
                             }
+                            PipelineCommand::ForceSeal(reply) => {
+                                let mut bm = batch_manager.lock().await;
+                                // Get tx count before sealing
+                                let tx_count = bm.current_batch_tx_count();
+                                // In dev mode, use immediate commit to make balances available right away
+                                let result = if config.dev_mode {
+                                    bm.seal_current_batch_immediate()
+                                } else {
+                                    bm.seal_current_batch()
+                                };
+                                let _ = reply.send(result.map(|opt_id| {
+                                    SealResult {
+                                        batch_id: opt_id.unwrap_or(0),
+                                        tx_count,
+                                    }
+                                }));
+                            }
                             PipelineCommand::Stats(reply) => {
                                 let stats = orchestrator.stats().await;
                                 let _ = reply.send(stats);
@@ -506,6 +756,19 @@ impl PipelineService {
                             PipelineCommand::Shutdown => {
                                 info!("Pipeline shutting down");
                                 orchestrator.state = PipelineState::Stopping;
+
+                                // Seal any pending transactions before shutdown
+                                let mut bm = batch_manager.lock().await;
+                                let pending_count = bm.current_batch_tx_count();
+                                if pending_count > 0 {
+                                    info!("Sealing {} pending transactions before shutdown", pending_count);
+                                    if let Err(e) = bm.seal_current_batch_immediate() {
+                                        warn!("Failed to seal pending batch on shutdown: {}", e);
+                                    }
+                                }
+                                drop(bm);
+
+                                info!("Pipeline shutdown complete");
                                 break;
                             }
                         }
@@ -538,6 +801,16 @@ impl PipelineService {
         let (reply_tx, reply_rx) = oneshot::channel();
         self.command_tx
             .send(PipelineCommand::Seal(reply_tx))
+            .await
+            .context("pipeline unavailable")?;
+        reply_rx.await.context("pipeline crashed")?
+    }
+
+    /// Force seal the current batch with extended info (for dev mode)
+    pub async fn force_seal(&self) -> Result<SealResult> {
+        let (reply_tx, reply_rx) = oneshot::channel();
+        self.command_tx
+            .send(PipelineCommand::ForceSeal(reply_tx))
             .await
             .context("pipeline unavailable")?;
         reply_rx.await.context("pipeline crashed")?
@@ -584,9 +857,7 @@ impl PipelineService {
     }
 }
 
-// ============================================================================
 // Tests
-// ============================================================================
 
 #[cfg(test)]
 mod tests {

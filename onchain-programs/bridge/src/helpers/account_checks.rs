@@ -1,8 +1,4 @@
-use pinocchio::{
-    account_info::AccountInfo,
-    program_error::ProgramError,
-};
-
+use pinocchio::{account_info::AccountInfo, program_error::ProgramError};
 
 #[inline(always)]
 pub fn check_signer(account: &AccountInfo) -> Result<(), ProgramError> {
@@ -11,4 +7,3 @@ pub fn check_signer(account: &AccountInfo) -> Result<(), ProgramError> {
     }
     Ok(())
 }
-

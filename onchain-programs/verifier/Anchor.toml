@@ -6,7 +6,7 @@ resolution = true
 skip-lint = false
 
 [programs.localnet]
-onchain_verifier = "6qPEb6x1oGhd2pf1UP3bgMWa7NspSNryzrA6ZCdsbFwT"
+onchain_verifier = "8TveT3mvH59qLzZNwrTT6hBqDHEobW2XnCPb7xZLBYHd"
 
 [registry]
 url = "https://api.apr.dev"

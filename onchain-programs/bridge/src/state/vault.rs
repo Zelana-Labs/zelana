@@ -17,13 +17,11 @@ impl Initialized for Vault {
     }
 }
 
-impl StateDefinition for Vault{
+impl StateDefinition for Vault {
     const LEN: usize = core::mem::size_of::<Vault>();
 }
 
-
 impl Vault {
-
     pub fn new(&mut self, domain: [u8; 32], bump: u8) {
         self.domain = domain;
         self.bump = bump;

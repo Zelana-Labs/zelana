@@ -17,7 +17,7 @@ pub fn apply_l2_block(
     let mut current_root = initial_root;
 
     for tx in txs {
-        let enabled = Boolean::new_witness(cs.clone(), || Ok(tx.enabled))?;
+        let _enabled = Boolean::new_witness(cs.clone(), || Ok(tx.enabled))?;
 
         // -------------------------------
         // Allocate sender fields

@@ -1,3 +1,4 @@
+#![allow(dead_code)] // Trait for future state abstraction
 use anyhow::Result;
 use zelana_account::AccountId;
 use zelana_account::AccountState;

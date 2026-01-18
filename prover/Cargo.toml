@@ -7,6 +7,14 @@ edition = { workspace = true }
 name = "prover"
 path = "src/main.rs"
 
+[[bin]]
+name = "keygen"
+path = "src/bin/keygen.rs"
+
+[[bin]]
+name = "convert_vk"
+path = "src/bin/convert_vk.rs"
+
 [dependencies]
 ark-std = { version = "=0.5.0", features = ["std"] }
 ark-ff = "=0.5.0"
@@ -46,6 +54,7 @@ solana-client = { version = "3.0" }
 solana-commitment-config = "3.1.0"
 solana-system-interface = "2.0"
 byteorder = "1.5"
+blake3 = "1"
 serde_bytes = { workspace = true }
 zelana-transaction = { workspace = true }
 zelana-signature = { workspace = true }

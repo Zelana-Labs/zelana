@@ -3,13 +3,10 @@
 //! Tests the complete L2 cycle including shielded transactions,
 //! fast withdrawals, and threshold encryption.
 
-use crate::sequencer::db::RocksDbStore;
-use crate::sequencer::shielded_state::ShieldedState;
-use crate::sequencer::threshold_mempool::{
-    EncryptedMempoolConfig, ThresholdMempoolManager, create_test_committee,
+use crate::sequencer::{
+    EncryptedMempoolConfig, PendingWithdrawal, RocksDbStore, ShieldedState,
+    ThresholdMempoolManager, WithdrawalQueue, WithdrawalState, create_test_committee,
 };
-use crate::sequencer::tx_router::PendingWithdrawal;
-use crate::sequencer::withdrawals::{WithdrawalQueue, WithdrawalState};
 use crate::storage::state::StateStore;
 use std::sync::Arc;
 use tempfile::TempDir;
@@ -618,6 +615,348 @@ async fn test_pipeline_pause_and_resume() {
     let final_stats = service.stats().await.unwrap();
     assert_eq!(final_stats.batches_proved, 1);
     assert_eq!(final_stats.batches_settled, 1);
+
+    service.shutdown().await.unwrap();
+}
+
+// ============================================================================
+// Settlement with Withdrawals Tests
+// ============================================================================
+
+#[tokio::test]
+async fn test_pipeline_with_withdrawals() {
+    use crate::sequencer::pipeline::{PipelineConfig, PipelineService, PipelineState};
+    use std::time::Duration;
+    use zelana_transaction::{DepositEvent, TransactionType, WithdrawRequest};
+
+    let temp_dir = tempfile::TempDir::new().unwrap();
+    let db = Arc::new(RocksDbStore::open(temp_dir.path().to_str().unwrap()).unwrap());
+
+    // Configure fast pipeline for testing
+    let mut config = PipelineConfig::default();
+    config.poll_interval_ms = 10;
+    config.batch_config.max_transactions = 10;
+    config.batch_config.min_transactions = 1;
+
+    let service = PipelineService::start(db.clone(), config, None).unwrap();
+
+    // 1. Submit deposit to fund an account
+    let alice = AccountId([1u8; 32]);
+    let l1_destination: [u8; 32] = [0xAA; 32];
+
+    service
+        .submit(TransactionType::Deposit(DepositEvent {
+            to: alice,
+            amount: 10000,
+            l1_seq: 1,
+        }))
+        .await
+        .unwrap();
+
+    // Seal deposit batch
+    let batch_id = service.seal().await.unwrap();
+    assert_eq!(batch_id, Some(1));
+
+    // Wait for deposit batch to be proved and settled
+    for _ in 0..50 {
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        let stats = service.stats().await.unwrap();
+        if stats.batches_settled >= 1 {
+            break;
+        }
+    }
+
+    let stats = service.stats().await.unwrap();
+    assert_eq!(stats.batches_proved, 1);
+    assert_eq!(stats.batches_settled, 1);
+
+    // 2. Submit a withdrawal transaction
+    let withdraw_amount = 3000u64;
+    let withdraw = WithdrawRequest {
+        from: alice,
+        to_l1_address: l1_destination,
+        amount: withdraw_amount,
+        nonce: 0,
+        signature: vec![0u8; 64], // Mock signature for test
+        signer_pubkey: [0u8; 32],
+    };
+
+    service
+        .submit(TransactionType::Withdraw(withdraw))
+        .await
+        .unwrap();
+
+    // Seal withdrawal batch
+    let batch_id = service.seal().await.unwrap();
+    assert_eq!(batch_id, Some(2));
+
+    // Wait for withdrawal batch to be proved and settled
+    for _ in 0..50 {
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        let stats = service.stats().await.unwrap();
+        if stats.batches_settled >= 2 {
+            break;
+        }
+    }
+
+    // Verify final state
+    let final_stats = service.stats().await.unwrap();
+    assert_eq!(final_stats.state, PipelineState::Running);
+    assert_eq!(final_stats.batches_proved, 2);
+    assert_eq!(final_stats.batches_settled, 2);
+
+    service.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn test_pipeline_multiple_withdrawals_in_batch() {
+    use crate::sequencer::pipeline::{PipelineConfig, PipelineService};
+    use std::time::Duration;
+    use zelana_transaction::{DepositEvent, TransactionType, WithdrawRequest};
+
+    let temp_dir = tempfile::TempDir::new().unwrap();
+    let db = Arc::new(RocksDbStore::open(temp_dir.path().to_str().unwrap()).unwrap());
+
+    let mut config = PipelineConfig::default();
+    config.poll_interval_ms = 10;
+    config.batch_config.max_transactions = 20;
+    config.batch_config.min_transactions = 1;
+
+    let service = PipelineService::start(db.clone(), config, None).unwrap();
+
+    // Fund multiple accounts
+    let accounts: Vec<AccountId> = (0..3).map(|i| AccountId([(i + 1) as u8; 32])).collect();
+
+    for (i, acc) in accounts.iter().enumerate() {
+        service
+            .submit(TransactionType::Deposit(DepositEvent {
+                to: *acc,
+                amount: 5000,
+                l1_seq: i as u64 + 1,
+            }))
+            .await
+            .unwrap();
+    }
+
+    // Seal deposit batch
+    service.seal().await.unwrap();
+
+    // Wait for deposits
+    for _ in 0..50 {
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        let stats = service.stats().await.unwrap();
+        if stats.batches_settled >= 1 {
+            break;
+        }
+    }
+
+    // Submit multiple withdrawals
+    for (i, acc) in accounts.iter().enumerate() {
+        let l1_dest: [u8; 32] = [(0xB0 + i) as u8; 32];
+        let withdraw = WithdrawRequest {
+            from: *acc,
+            to_l1_address: l1_dest,
+            amount: 1000 + (i as u64 * 500),
+            nonce: 0,
+            signature: vec![0u8; 64],
+            signer_pubkey: [0u8; 32],
+        };
+        service
+            .submit(TransactionType::Withdraw(withdraw))
+            .await
+            .unwrap();
+    }
+
+    // Seal withdrawal batch
+    let batch_id = service.seal().await.unwrap();
+    assert_eq!(batch_id, Some(2));
+
+    // Wait for withdrawal batch
+    for _ in 0..50 {
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        let stats = service.stats().await.unwrap();
+        if stats.batches_settled >= 2 {
+            break;
+        }
+    }
+
+    let stats = service.stats().await.unwrap();
+    assert_eq!(stats.batches_proved, 2);
+    assert_eq!(stats.batches_settled, 2);
+
+    service.shutdown().await.unwrap();
+}
+
+#[test]
+fn test_withdrawal_merkle_root_computation() {
+    use crate::sequencer::{TrackedWithdrawal, WithdrawalState, build_withdrawal_merkle_root};
+
+    // Test that multiple withdrawals produce a non-zero merkle root
+    let withdrawals: Vec<TrackedWithdrawal> = (0..3)
+        .map(|i| TrackedWithdrawal {
+            tx_hash: [i as u8; 32],
+            from: account(i + 1),
+            to_l1_address: [(0xA0 + i) as u8; 32],
+            amount: 1000 * (i as u64 + 1),
+            l2_nonce: i as u64,
+            state: WithdrawalState::InBatch { batch_id: 1 },
+            created_at: 0,
+            batch_id: Some(1),
+        })
+        .collect();
+
+    let root = build_withdrawal_merkle_root(&withdrawals);
+    assert_ne!(root, [0u8; 32], "withdrawal root should not be zero");
+
+    // Same withdrawals should produce same root
+    let root2 = build_withdrawal_merkle_root(&withdrawals);
+    assert_eq!(root, root2, "withdrawal root should be deterministic");
+
+    // Different withdrawals should produce different root
+    let mut different = withdrawals.clone();
+    different[0].amount = 9999;
+    let root3 = build_withdrawal_merkle_root(&different);
+    assert_ne!(
+        root, root3,
+        "different withdrawals should produce different root"
+    );
+}
+
+// ============================================================================
+// Batch & Transaction Recording Tests
+// ============================================================================
+
+#[tokio::test]
+async fn test_pipeline_stores_batch_and_tx_summaries() {
+    use crate::api::types::{BatchStatus, TxStatus, TxType};
+    use crate::sequencer::pipeline::{PipelineConfig, PipelineService, PipelineState};
+    use std::time::Duration;
+    use zelana_transaction::{DepositEvent, TransactionType};
+
+    let temp_dir = tempfile::TempDir::new().unwrap();
+    let db = Arc::new(RocksDbStore::open(temp_dir.path().to_str().unwrap()).unwrap());
+
+    // Configure fast pipeline for testing
+    let mut config = PipelineConfig::default();
+    config.poll_interval_ms = 10;
+    config.batch_config.max_transactions = 10;
+    config.batch_config.min_transactions = 1;
+
+    let service = PipelineService::start(db.clone(), config, None).unwrap();
+
+    // Submit deposits
+    let alice = AccountId([1u8; 32]);
+    let bob = AccountId([2u8; 32]);
+
+    service
+        .submit(TransactionType::Deposit(DepositEvent {
+            to: alice,
+            amount: 10000,
+            l1_seq: 1,
+        }))
+        .await
+        .unwrap();
+
+    service
+        .submit(TransactionType::Deposit(DepositEvent {
+            to: bob,
+            amount: 5000,
+            l1_seq: 2,
+        }))
+        .await
+        .unwrap();
+
+    // Seal and wait for batch to process
+    let batch_id = service.seal().await.unwrap();
+    assert_eq!(batch_id, Some(1));
+
+    // Wait for proving and settlement
+    for _ in 0..50 {
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        let stats = service.stats().await.unwrap();
+        if stats.batches_settled >= 1 {
+            break;
+        }
+    }
+
+    let stats = service.stats().await.unwrap();
+    assert_eq!(stats.state, PipelineState::Running);
+    assert_eq!(stats.batches_proved, 1);
+    assert_eq!(stats.batches_settled, 1);
+
+    // Verify batch summary was stored
+    let batch_summary = db.get_batch_summary(1).unwrap();
+    assert!(batch_summary.is_some(), "batch summary should be stored");
+    let batch_summary = batch_summary.unwrap();
+    assert_eq!(batch_summary.batch_id, 1);
+    assert_eq!(batch_summary.tx_count, 2);
+    assert_eq!(batch_summary.status, BatchStatus::Settled);
+    assert!(batch_summary.l1_tx_sig.is_some());
+    assert!(batch_summary.settled_at.is_some());
+
+    // Verify transaction summaries were stored
+    let (txs, total) = db.list_transactions(0, 10, None, None, None).unwrap();
+    assert_eq!(total, 2);
+    assert_eq!(txs.len(), 2);
+
+    // Check tx properties
+    for tx in &txs {
+        assert_eq!(tx.batch_id, Some(1));
+        assert_eq!(tx.status, TxStatus::Settled);
+        assert_eq!(tx.tx_type, TxType::Deposit);
+        assert!(tx.amount.is_some());
+        assert!(tx.executed_at.is_some());
+    }
+
+    // Verify we can filter by status
+    let (settled_txs, _) = db
+        .list_transactions(0, 10, None, None, Some(TxStatus::Settled))
+        .unwrap();
+    assert_eq!(settled_txs.len(), 2);
+
+    // Verify we can filter by type
+    let (deposit_txs, _) = db
+        .list_transactions(0, 10, None, Some(TxType::Deposit), None)
+        .unwrap();
+    assert_eq!(deposit_txs.len(), 2);
+
+    // Verify we can filter by batch_id
+    let (batch1_txs, _) = db.list_transactions(0, 10, Some(1), None, None).unwrap();
+    assert_eq!(batch1_txs.len(), 2);
+
+    // Submit a second batch to verify multiple batches work
+    service
+        .submit(TransactionType::Deposit(DepositEvent {
+            to: AccountId([3u8; 32]),
+            amount: 3000,
+            l1_seq: 3,
+        }))
+        .await
+        .unwrap();
+
+    service.seal().await.unwrap();
+
+    // Wait for second batch
+    for _ in 0..50 {
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        let stats = service.stats().await.unwrap();
+        if stats.batches_settled >= 2 {
+            break;
+        }
+    }
+
+    // Verify batch listing
+    let (batches, batch_total) = db.list_batches(0, 10).unwrap();
+    assert_eq!(batch_total, 2);
+    assert_eq!(batches.len(), 2);
+    // Should be newest first
+    assert_eq!(batches[0].batch_id, 2);
+    assert_eq!(batches[1].batch_id, 1);
+
+    // Verify total transactions
+    let (all_txs, tx_total) = db.list_transactions(0, 10, None, None, None).unwrap();
+    assert_eq!(tx_total, 3);
+    assert_eq!(all_txs.len(), 3);
 
     service.shutdown().await.unwrap();
 }

@@ -28,9 +28,14 @@ impl Initialized for Config {
 }
 
 impl Config {
-    pub fn new(&mut self, sequencer_authority: Pubkey, domain: [u8; 32], bump: u8) -> Result<(), ProgramError>{
+    pub fn new(
+        &mut self,
+        sequencer_authority: Pubkey,
+        domain: [u8; 32],
+        bump: u8,
+    ) -> Result<(), ProgramError> {
         if sequencer_authority == Pubkey::default() {
-        return Err(ProgramError::InvalidArgument);
+            return Err(ProgramError::InvalidArgument);
         }
         if domain == [0u8; 32] {
             return Err(ProgramError::InvalidArgument);

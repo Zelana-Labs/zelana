@@ -13,12 +13,10 @@ use log::{error, info, warn};
 use tokio::sync::Mutex;
 
 use super::types::*;
-use crate::sequencer::db::RocksDbStore;
-use crate::sequencer::fast_withdrawals::FastWithdrawManager;
-use crate::sequencer::pipeline::PipelineService;
-use crate::sequencer::shielded_state::ShieldedState;
-use crate::sequencer::threshold_mempool::ThresholdMempoolManager;
-use crate::sequencer::withdrawals::WithdrawalQueue;
+use crate::sequencer::{
+    FastWithdrawManager, PipelineService, RocksDbStore, ShieldedState, ThresholdMempoolManager,
+    WithdrawalQueue, WithdrawalState,
+};
 use crate::storage::StateStore;
 use zelana_account::AccountId;
 use zelana_transaction::{PrivateTransaction, TransactionType};
@@ -37,6 +35,8 @@ pub struct ApiState {
     pub fast_withdraw: Option<Arc<FastWithdrawManager>>,
     pub threshold_mempool: Option<Arc<ThresholdMempoolManager>>,
     pub start_time: std::time::Instant,
+    /// Dev mode enables testing endpoints like /dev/deposit and /dev/seal
+    pub dev_mode: bool,
 }
 
 // ============================================================================
@@ -58,9 +58,15 @@ pub async fn health(State(state): State<ApiState>) -> impl IntoResponse {
 pub async fn get_state_roots(State(state): State<ApiState>) -> impl IntoResponse {
     let shielded = state.shielded_state.lock().await;
 
+    // Get latest batch ID from database
+    let batch_id = state.db.get_latest_batch_id().unwrap_or(None).unwrap_or(0);
+
+    // Get latest state root from database
+    let state_root = state.db.get_latest_state_root().unwrap_or([0u8; 32]);
+
     Json(StateRootsResponse {
-        batch_id: 0,                        // TODO: Get from batch service
-        state_root: hex::encode([0u8; 32]), // TODO: Get from state
+        batch_id,
+        state_root: hex::encode(state_root),
         shielded_root: hex::encode(shielded.root()),
         commitment_count: shielded.commitment_count(),
     })
@@ -112,17 +118,94 @@ pub async fn get_account(
     let account_id = AccountId(arr);
 
     match state.db.get_account_state(&account_id) {
-        Ok(account_state) => Json(AccountStateResponse {
-            account_id: req.account_id,
-            balance: account_state.balance,
-            nonce: account_state.nonce,
-        })
-        .into_response(),
+        Ok(account_state) => {
+            log::debug!(
+                "[GET_ACCOUNT] Account {}: balance={}, nonce={}",
+                hex::encode(&account_id.0[..8]),
+                account_state.balance,
+                account_state.nonce
+            );
+            Json(AccountStateResponse {
+                account_id: req.account_id,
+                balance: account_state.balance,
+                nonce: account_state.nonce,
+            })
+            .into_response()
+        }
         Err(e) => {
             error!("Failed to get account: {}", e);
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(ErrorResponse::internal("Failed to get account state")),
+            )
+                .into_response()
+        }
+    }
+}
+
+// ============================================================================
+// Transfer Operations
+// ============================================================================
+
+/// Submit a transparent transfer transaction
+pub async fn submit_transfer(
+    State(state): State<ApiState>,
+    Json(req): Json<super::types::TransferRequest>,
+) -> impl IntoResponse {
+    use zelana_account::AccountId;
+    use zelana_transaction::{SignedTransaction, TransactionData};
+
+    // Build the signed transaction
+    let tx_data = TransactionData {
+        from: AccountId(req.from),
+        to: AccountId(req.to),
+        amount: req.amount,
+        nonce: req.nonce,
+        chain_id: req.chain_id,
+    };
+
+    let signed_tx = SignedTransaction {
+        data: tx_data,
+        signature: req.signature,
+        signer_pubkey: req.signer_pubkey,
+    };
+
+    let tx = TransactionType::Transfer(signed_tx);
+
+    // Compute tx hash (matches TxRouter::compute_tx_hash)
+    let tx_hash = {
+        let mut hasher = blake3::Hasher::new();
+        hasher.update(&req.signer_pubkey);
+        hasher.update(&req.nonce.to_le_bytes());
+        *hasher.finalize().as_bytes()
+    };
+
+    // Submit to pipeline service
+    match state.pipeline_service.submit(tx).await {
+        Ok(()) => {
+            info!(
+                "Transfer accepted: {} -> {} amount={} tx_hash={}",
+                hex::encode(req.from),
+                hex::encode(req.to),
+                req.amount,
+                hex::encode(tx_hash)
+            );
+            Json(super::types::TransferResponse {
+                tx_hash: hex::encode(tx_hash),
+                accepted: true,
+                message: "Transfer accepted".to_string(),
+            })
+            .into_response()
+        }
+        Err(e) => {
+            warn!("Transfer rejected: {}", e);
+            (
+                StatusCode::BAD_REQUEST,
+                Json(super::types::TransferResponse {
+                    tx_hash: hex::encode(tx_hash),
+                    accepted: false,
+                    message: e.to_string(),
+                }),
             )
                 .into_response()
         }
@@ -391,42 +474,55 @@ pub async fn get_withdrawal_status(
     let mut arr = [0u8; 32];
     arr.copy_from_slice(&tx_hash_bytes);
 
+    // First check in-memory queue
     let queue = state.withdrawal_queue.lock().await;
 
-    match queue.get(&arr) {
-        Some(withdrawal) => {
-            let state_str = match &withdrawal.state {
-                crate::sequencer::withdrawals::WithdrawalState::Pending => "pending",
-                crate::sequencer::withdrawals::WithdrawalState::InBatch { .. } => "in_batch",
-                crate::sequencer::withdrawals::WithdrawalState::Submitted { .. } => "submitted",
-                crate::sequencer::withdrawals::WithdrawalState::Finalized => "finalized",
-                crate::sequencer::withdrawals::WithdrawalState::Failed { .. } => "failed",
-            };
+    if let Some(withdrawal) = queue.get(&arr) {
+        let state_str = match &withdrawal.state {
+            WithdrawalState::Pending => "pending",
+            WithdrawalState::InBatch { .. } => "in_batch",
+            WithdrawalState::Submitted { .. } => "submitted",
+            WithdrawalState::Finalized => "finalized",
+            WithdrawalState::Failed { .. } => "failed",
+        };
 
-            let l1_sig =
-                if let crate::sequencer::withdrawals::WithdrawalState::Submitted { l1_tx_sig } =
-                    &withdrawal.state
-                {
-                    Some(l1_tx_sig.clone())
-                } else {
-                    None
-                };
+        let l1_sig = if let WithdrawalState::Submitted { l1_tx_sig } = &withdrawal.state {
+            Some(l1_tx_sig.clone())
+        } else {
+            None
+        };
 
-            Json(WithdrawalStatusResponse {
-                tx_hash: req.tx_hash,
-                state: state_str.to_string(),
-                amount: withdrawal.amount,
-                to_l1_address: hex::encode(withdrawal.to_l1_address),
-                l1_tx_sig: l1_sig,
-            })
-            .into_response()
-        }
-        None => (
-            StatusCode::NOT_FOUND,
-            Json(ErrorResponse::not_found("Withdrawal not found")),
-        )
-            .into_response(),
+        return Json(WithdrawalStatusResponse {
+            tx_hash: req.tx_hash,
+            state: state_str.to_string(),
+            amount: withdrawal.amount,
+            to_l1_address: hex::encode(withdrawal.to_l1_address),
+            l1_tx_sig: l1_sig,
+        })
+        .into_response();
     }
+    drop(queue);
+
+    // Fall back to database lookup for withdrawals stored during batch execution
+    if let Ok(Some(data)) = state.db.get_withdrawal(&arr) {
+        // Deserialize the PendingWithdrawal stored by tx_router.commit()
+        if let Ok(pw) = serde_json::from_slice::<crate::sequencer::PendingWithdrawal>(&data) {
+            return Json(WithdrawalStatusResponse {
+                tx_hash: req.tx_hash,
+                state: "executed".to_string(), // Withdrawal was executed in a batch
+                amount: pw.amount,
+                to_l1_address: hex::encode(pw.to_l1_address),
+                l1_tx_sig: None,
+            })
+            .into_response();
+        }
+    }
+
+    (
+        StatusCode::NOT_FOUND,
+        Json(ErrorResponse::not_found("Withdrawal not found")),
+    )
+        .into_response()
 }
 
 // ============================================================================
@@ -742,4 +838,336 @@ pub async fn get_committee_info(State(state): State<ApiState>) -> impl IntoRespo
         pending_count: pending,
     })
     .into_response()
+}
+
+// ============================================================================
+// Batch & Transaction Query Operations
+// ============================================================================
+
+/// Get a batch by ID
+pub async fn get_batch(
+    State(state): State<ApiState>,
+    Json(req): Json<GetBatchRequest>,
+) -> impl IntoResponse {
+    match state.db.get_batch_summary(req.batch_id) {
+        Ok(batch) => Json(GetBatchResponse { batch }).into_response(),
+        Err(e) => {
+            error!("Failed to get batch: {}", e);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse::internal("Failed to get batch")),
+            )
+                .into_response()
+        }
+    }
+}
+
+/// List batches with pagination
+pub async fn list_batches(
+    State(state): State<ApiState>,
+    Json(req): Json<ListBatchesRequest>,
+) -> impl IntoResponse {
+    let limit = req.pagination.clamped_limit();
+    let offset = req.pagination.offset;
+
+    match state.db.list_batches(offset, limit) {
+        Ok((batches, total)) => Json(ListBatchesResponse {
+            batches,
+            total,
+            offset,
+            limit,
+        })
+        .into_response(),
+        Err(e) => {
+            error!("Failed to list batches: {}", e);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse::internal("Failed to list batches")),
+            )
+                .into_response()
+        }
+    }
+}
+
+/// Get a transaction by hash
+pub async fn get_transaction(
+    State(state): State<ApiState>,
+    Json(req): Json<GetTxRequest>,
+) -> impl IntoResponse {
+    let tx_hash_bytes = match hex::decode(&req.tx_hash) {
+        Ok(bytes) if bytes.len() == 32 => bytes,
+        _ => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(ErrorResponse::bad_request("Invalid tx hash format")),
+            )
+                .into_response();
+        }
+    };
+
+    let mut arr = [0u8; 32];
+    arr.copy_from_slice(&tx_hash_bytes);
+
+    match state.db.get_tx_summary(&arr) {
+        Ok(tx) => Json(GetTxResponse { tx }).into_response(),
+        Err(e) => {
+            error!("Failed to get transaction: {}", e);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse::internal("Failed to get transaction")),
+            )
+                .into_response()
+        }
+    }
+}
+
+/// List transactions with pagination and filters
+pub async fn list_transactions(
+    State(state): State<ApiState>,
+    Json(req): Json<ListTxsRequest>,
+) -> impl IntoResponse {
+    let limit = req.pagination.clamped_limit();
+    let offset = req.pagination.offset;
+
+    match state
+        .db
+        .list_transactions(offset, limit, req.batch_id, req.tx_type, req.status)
+    {
+        Ok((transactions, total)) => Json(ListTxsResponse {
+            transactions,
+            total,
+            offset,
+            limit,
+        })
+        .into_response(),
+        Err(e) => {
+            error!("Failed to list transactions: {}", e);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse::internal("Failed to list transactions")),
+            )
+                .into_response()
+        }
+    }
+}
+
+/// Get global statistics
+pub async fn get_global_stats(State(state): State<ApiState>) -> impl IntoResponse {
+    let uptime = state.start_time.elapsed().as_secs();
+
+    // Get stats from DB
+    let (total_batches, total_transactions) = match state.db.get_global_stats() {
+        Ok(stats) => stats,
+        Err(e) => {
+            error!("Failed to get global stats: {}", e);
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse::internal("Failed to get stats")),
+            )
+                .into_response();
+        }
+    };
+
+    let active_accounts = state.db.count_active_accounts().unwrap_or(0);
+
+    let shielded = state.shielded_state.lock().await;
+    let shielded_commitments = shielded.commitment_count();
+    drop(shielded);
+
+    // Get current batch info from pipeline
+    let current_batch_id = match state.pipeline_service.stats().await {
+        Ok(stats) => stats.batch_stats.next_batch_id.saturating_sub(1),
+        Err(_) => 0,
+    };
+
+    // Get deposit/withdrawal totals from DB
+    let total_deposited = state.db.get_total_deposits().unwrap_or(0);
+    let total_withdrawn = state.db.get_withdrawals_total().unwrap_or(0);
+
+    Json(GlobalStats {
+        total_batches,
+        total_transactions,
+        total_deposited,
+        total_withdrawn,
+        current_batch_id,
+        active_accounts,
+        shielded_commitments,
+        uptime_secs: uptime,
+    })
+    .into_response()
+}
+
+// ============================================================================
+// Development/Testing Operations (only available in dev mode)
+// ============================================================================
+
+/// Simulate a deposit (dev mode only)
+/// This allows testing the full pipeline without a real L1 indexer.
+pub async fn dev_deposit(
+    State(state): State<ApiState>,
+    Json(req): Json<super::types::DevDepositRequest>,
+) -> impl IntoResponse {
+    // Check dev mode
+    if !state.dev_mode {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(ErrorResponse::not_found("Endpoint not available")),
+        )
+            .into_response();
+    }
+
+    // Parse destination address
+    let to_bytes = match hex::decode(&req.to) {
+        Ok(bytes) if bytes.len() == 32 => bytes,
+        _ => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(ErrorResponse::bad_request(
+                    "Invalid 'to' address format (expected 32-byte hex)",
+                )),
+            )
+                .into_response();
+        }
+    };
+
+    let mut to_arr = [0u8; 32];
+    to_arr.copy_from_slice(&to_bytes);
+    let to = AccountId(to_arr);
+
+    // Generate a mock L1 sequence number (timestamp-based for uniqueness)
+    let l1_seq = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_micros() as u64)
+        .unwrap_or(0);
+
+    // Create deposit event
+    use zelana_transaction::{DepositEvent, TransactionType};
+    let deposit = DepositEvent {
+        to: to.clone(),
+        amount: req.amount,
+        l1_seq,
+    };
+
+    // Compute tx hash (same as TxRouter for deposits)
+    let tx_hash = {
+        let mut hasher = blake3::Hasher::new();
+        hasher.update(&to_arr);
+        hasher.update(&l1_seq.to_le_bytes());
+        *hasher.finalize().as_bytes()
+    };
+
+    // Submit to pipeline
+    match state
+        .pipeline_service
+        .submit(TransactionType::Deposit(deposit))
+        .await
+    {
+        Ok(()) => {
+            info!(
+                "[DEV] Deposit accepted: to={} amount={} tx_hash={}",
+                req.to,
+                req.amount,
+                hex::encode(tx_hash)
+            );
+
+            // Track dev deposit amount
+            if let Err(e) = state.db.add_dev_deposit(req.amount) {
+                warn!("[DEV] Failed to track deposit amount: {}", e);
+            }
+
+            // Query new balance
+            let new_balance = state
+                .db
+                .get_account_state(&to)
+                .map(|acc| acc.balance)
+                .unwrap_or(0);
+
+            Json(super::types::DevDepositResponse {
+                tx_hash: hex::encode(tx_hash),
+                accepted: true,
+                new_balance,
+                message: "Dev deposit accepted".to_string(),
+            })
+            .into_response()
+        }
+        Err(e) => {
+            warn!("[DEV] Deposit rejected: {}", e);
+            (
+                StatusCode::BAD_REQUEST,
+                Json(super::types::DevDepositResponse {
+                    tx_hash: hex::encode(tx_hash),
+                    accepted: false,
+                    new_balance: 0,
+                    message: e.to_string(),
+                }),
+            )
+                .into_response()
+        }
+    }
+}
+
+/// Force seal the current batch (dev mode only)
+/// This allows testing batch settlement without waiting for the timer.
+pub async fn dev_seal(
+    State(state): State<ApiState>,
+    Json(req): Json<super::types::DevSealRequest>,
+) -> impl IntoResponse {
+    // Check dev mode
+    if !state.dev_mode {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(ErrorResponse::not_found("Endpoint not available")),
+        )
+            .into_response();
+    }
+
+    // Force seal the batch
+    match state.pipeline_service.force_seal().await {
+        Ok(seal_result) => {
+            info!(
+                "[DEV] Batch sealed: batch_id={} tx_count={}",
+                seal_result.batch_id, seal_result.tx_count
+            );
+
+            // Optionally wait for proof
+            if req.wait_for_proof && seal_result.tx_count > 0 {
+                // Poll for proof completion (with timeout)
+                let timeout = tokio::time::Duration::from_secs(30);
+                let start = std::time::Instant::now();
+
+                while start.elapsed() < timeout {
+                    if let Ok(stats) = state.pipeline_service.stats().await {
+                        // Check if this batch is no longer in proving queue
+                        if stats.batch_stats.proving_count == 0
+                            || stats.batch_stats.next_batch_id > seal_result.batch_id + 1
+                        {
+                            break;
+                        }
+                    }
+                    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+                }
+            }
+
+            Json(super::types::DevSealResponse {
+                batch_id: seal_result.batch_id,
+                tx_count: seal_result.tx_count,
+                message: format!(
+                    "Batch {} sealed with {} transactions",
+                    seal_result.batch_id, seal_result.tx_count
+                ),
+            })
+            .into_response()
+        }
+        Err(e) => {
+            warn!("[DEV] Seal failed: {}", e);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse::internal(format!(
+                    "Failed to seal batch: {}",
+                    e
+                ))),
+            )
+                .into_response()
+        }
+    }
 }

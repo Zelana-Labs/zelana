@@ -11,6 +11,7 @@ use {
 
 pub struct ZelanaClient {
     socket: UdpSocket,
+    #[allow(dead_code)] // Reserved for reconnection logic
     server_addr: String,
     session: SessionKeys,
 }

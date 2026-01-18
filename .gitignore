@@ -4,3 +4,8 @@
 .vscode
 .env
 .surfpool
+/zelana-db
+node_modules
+zelana-db_secondary
+dist
+keys

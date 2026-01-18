@@ -3,7 +3,7 @@ use anchor_lang::solana_program::hash::hashv;
 use hex_literal::hex;
 use solana_bn254::prelude::{alt_bn128_addition, alt_bn128_multiplication, alt_bn128_pairing};
 
-declare_id!("6qPEb6x1oGhd2pf1UP3bgMWa7NspSNryzrA6ZCdsbFwT");
+declare_id!("8TveT3mvH59qLzZNwrTT6hBqDHEobW2XnCPb7xZLBYHd");
 
 // Base field modulus 'q' for BN254
 pub const BASE_FIELD_MODULUS_Q: [u8; 32] =
@@ -75,6 +75,162 @@ pub struct VerifiedRisc0Proof {
     pub journal_digest: [u8; 32],
     pub verified_at: i64,
     pub bump: u8,
+}
+
+// ============================================================================
+// Batch Verification (for Bridge CPI)
+// ============================================================================
+
+/// Maximum number of IC points we support (determines public inputs count)
+pub const MAX_IC_POINTS: usize = 8;
+
+/// Account to store the L2 batch verifying key
+/// Seeds: ["batch_vk", domain]
+#[account]
+pub struct BatchVerifyingKey {
+    /// Authority that can update this VK
+    pub authority: Pubkey,
+    /// Domain identifier (e.g., "zelana-mainnet")
+    pub domain: [u8; 32],
+    /// Alpha G1 point
+    pub alpha_g1: [u8; 64],
+    /// Beta G2 point
+    pub beta_g2: [u8; 128],
+    /// Gamma G2 point
+    pub gamma_g2: [u8; 128],
+    /// Delta G2 point
+    pub delta_g2: [u8; 128],
+    /// IC points (fixed array for deterministic sizing)
+    pub ic: [[u8; 64]; MAX_IC_POINTS],
+    /// Number of IC points actually used
+    pub ic_len: u8,
+    /// Whether the VK is fully initialized (all IC points added)
+    pub finalized: bool,
+    /// When the VK was stored
+    pub created_at: i64,
+    /// Bump for PDA derivation
+    pub bump: u8,
+}
+
+impl BatchVerifyingKey {
+    pub const LEN: usize = 8 + // discriminator
+        32 + // authority
+        32 + // domain
+        64 + // alpha_g1
+        128 + // beta_g2
+        128 + // gamma_g2
+        128 + // delta_g2
+        (64 * MAX_IC_POINTS) + // ic
+        1 + // ic_len
+        1 + // finalized
+        8 + // created_at
+        1; // bump
+}
+
+/// Batch proof public inputs for L2 state transitions
+/// These are the values verified by the ZK proof
+#[derive(Clone, PartialEq, Eq, AnchorDeserialize, AnchorSerialize)]
+pub struct BatchPublicInputs {
+    /// Previous state root
+    pub pre_state_root: [u8; 32],
+    /// New state root after batch execution
+    pub post_state_root: [u8; 32],
+    /// Previous shielded commitment tree root
+    pub pre_shielded_root: [u8; 32],
+    /// New shielded commitment tree root
+    pub post_shielded_root: [u8; 32],
+    /// Merkle root of withdrawals in this batch
+    pub withdrawal_root: [u8; 32],
+    /// Hash of all transactions in the batch
+    pub batch_hash: [u8; 32],
+    /// Batch sequence number
+    pub batch_id: u64,
+}
+
+/// Context for storing the batch verifying key
+#[derive(Accounts)]
+#[instruction(domain: [u8; 32])]
+pub struct StoreBatchVk<'info> {
+    #[account(mut)]
+    pub authority: Signer<'info>,
+
+    #[account(
+        init,
+        payer = authority,
+        space = BatchVerifyingKey::LEN,
+        seeds = [b"batch_vk", domain.as_ref()],
+        bump
+    )]
+    pub vk_account: Account<'info, BatchVerifyingKey>,
+
+    pub system_program: Program<'info, System>,
+}
+
+/// Context for initializing batch VK (without IC points - for chunked upload)
+#[derive(Accounts)]
+#[instruction(domain: [u8; 32])]
+pub struct InitBatchVk<'info> {
+    #[account(mut)]
+    pub authority: Signer<'info>,
+
+    #[account(
+        init,
+        payer = authority,
+        space = BatchVerifyingKey::LEN,
+        seeds = [b"batch_vk", domain.as_ref()],
+        bump
+    )]
+    pub vk_account: Account<'info, BatchVerifyingKey>,
+
+    pub system_program: Program<'info, System>,
+}
+
+/// Context for appending IC points to an existing VK
+#[derive(Accounts)]
+pub struct AppendIcPoints<'info> {
+    #[account(mut)]
+    pub authority: Signer<'info>,
+
+    #[account(
+        mut,
+        seeds = [b"batch_vk", vk_account.domain.as_ref()],
+        bump = vk_account.bump,
+        constraint = vk_account.authority == authority.key() @ VerifierError::InvalidPublicInput,
+        constraint = !vk_account.finalized @ VerifierError::InvalidPublicInput,
+    )]
+    pub vk_account: Account<'info, BatchVerifyingKey>,
+}
+
+/// Context for finalizing a VK (marking it ready for use)
+#[derive(Accounts)]
+pub struct FinalizeBatchVk<'info> {
+    #[account(mut)]
+    pub authority: Signer<'info>,
+
+    #[account(
+        mut,
+        seeds = [b"batch_vk", vk_account.domain.as_ref()],
+        bump = vk_account.bump,
+        constraint = vk_account.authority == authority.key() @ VerifierError::InvalidPublicInput,
+        constraint = !vk_account.finalized @ VerifierError::InvalidPublicInput,
+    )]
+    pub vk_account: Account<'info, BatchVerifyingKey>,
+}
+
+/// Context for verifying a batch proof via CPI
+/// This is called by the Bridge program to verify batch submissions
+#[derive(Accounts)]
+pub struct VerifyBatchProof<'info> {
+    /// The Bridge program calling this via CPI
+    pub caller: Signer<'info>,
+
+    /// The stored verifying key for this domain
+    #[account(
+        seeds = [b"batch_vk", vk_account.domain.as_ref()],
+        bump = vk_account.bump,
+        constraint = vk_account.finalized @ VerifierError::InvalidPublicInput,
+    )]
+    pub vk_account: Account<'info, BatchVerifyingKey>,
 }
 
 /// Context for verifying and storing Groth16 proofs
@@ -183,6 +339,160 @@ pub mod onchain_verifier {
         msg!("RISC0 proof verified and stored successfully!");
         Ok(())
     }
+
+    /// Store the batch verifying key for a domain
+    /// This must be called once per domain to set up the VK used for batch proof verification
+    pub fn store_batch_vk(
+        ctx: Context<StoreBatchVk>,
+        domain: [u8; 32],
+        alpha_g1: [u8; 64],
+        beta_g2: [u8; 128],
+        gamma_g2: [u8; 128],
+        delta_g2: [u8; 128],
+        ic: Vec<[u8; 64]>,
+    ) -> Result<()> {
+        // Validate IC length
+        require!(ic.len() <= MAX_IC_POINTS, VerifierError::InvalidPublicInput);
+        require!(!ic.is_empty(), VerifierError::InvalidPublicInput);
+
+        let vk = &mut ctx.accounts.vk_account;
+        vk.authority = ctx.accounts.authority.key();
+        vk.domain = domain;
+        vk.alpha_g1 = alpha_g1;
+        vk.beta_g2 = beta_g2;
+        vk.gamma_g2 = gamma_g2;
+        vk.delta_g2 = delta_g2;
+
+        // Copy IC points into fixed-size array
+        for (i, point) in ic.iter().enumerate() {
+            vk.ic[i] = *point;
+        }
+        vk.ic_len = ic.len() as u8;
+        vk.finalized = true;
+        vk.created_at = Clock::get()?.unix_timestamp;
+        vk.bump = ctx.bumps.vk_account;
+
+        msg!("Batch VK stored for domain, IC points: {}", ic.len());
+        Ok(())
+    }
+
+    /// Initialize batch VK without IC points (for chunked upload)
+    /// After this, call append_ic_points to add IC points, then finalize_batch_vk
+    pub fn init_batch_vk(
+        ctx: Context<InitBatchVk>,
+        domain: [u8; 32],
+        alpha_g1: [u8; 64],
+        beta_g2: [u8; 128],
+        gamma_g2: [u8; 128],
+        delta_g2: [u8; 128],
+    ) -> Result<()> {
+        let vk = &mut ctx.accounts.vk_account;
+        vk.authority = ctx.accounts.authority.key();
+        vk.domain = domain;
+        vk.alpha_g1 = alpha_g1;
+        vk.beta_g2 = beta_g2;
+        vk.gamma_g2 = gamma_g2;
+        vk.delta_g2 = delta_g2;
+        vk.ic = [[0u8; 64]; MAX_IC_POINTS];
+        vk.ic_len = 0;
+        vk.finalized = false;
+        vk.created_at = Clock::get()?.unix_timestamp;
+        vk.bump = ctx.bumps.vk_account;
+
+        msg!("Batch VK initialized for domain (awaiting IC points)");
+        Ok(())
+    }
+
+    /// Append IC points to an existing VK (for chunked upload)
+    /// Can be called multiple times until all IC points are added
+    pub fn append_ic_points(ctx: Context<AppendIcPoints>, ic_points: Vec<[u8; 64]>) -> Result<()> {
+        let vk = &mut ctx.accounts.vk_account;
+
+        let current_len = vk.ic_len as usize;
+        let new_len = current_len + ic_points.len();
+
+        require!(new_len <= MAX_IC_POINTS, VerifierError::InvalidPublicInput);
+        require!(!ic_points.is_empty(), VerifierError::InvalidPublicInput);
+
+        for (i, point) in ic_points.iter().enumerate() {
+            vk.ic[current_len + i] = *point;
+        }
+        vk.ic_len = new_len as u8;
+
+        msg!("Appended {} IC points, total: {}", ic_points.len(), new_len);
+        Ok(())
+    }
+
+    /// Finalize the VK after all IC points have been added
+    pub fn finalize_batch_vk(ctx: Context<FinalizeBatchVk>) -> Result<()> {
+        let vk = &mut ctx.accounts.vk_account;
+
+        // Must have at least 1 IC point
+        require!(vk.ic_len > 0, VerifierError::InvalidPublicInput);
+
+        vk.finalized = true;
+        msg!("Batch VK finalized with {} IC points", vk.ic_len);
+        Ok(())
+    }
+
+    /// Verify a batch proof (called via CPI from Bridge)
+    /// Returns Ok(()) if proof is valid, Err if invalid
+    pub fn verify_batch_proof(
+        ctx: Context<VerifyBatchProof>,
+        proof: Groth16Proof,
+        public_inputs: BatchPublicInputs,
+    ) -> Result<()> {
+        let vk = &ctx.accounts.vk_account;
+
+        // Convert BatchPublicInputs to field elements for Groth16 verification
+        let inputs = batch_inputs_to_field_elements(&public_inputs);
+
+        // Build VK from stored data
+        let ic: Vec<[u8; 64]> = vk.ic[..vk.ic_len as usize].to_vec();
+
+        // Validate IC length matches expected public inputs + 1
+        require!(
+            ic.len() == inputs.len() + 1,
+            VerifierError::InvalidPublicInput
+        );
+
+        let verifying_key = Groth16VerifyingKey {
+            alpha_g1: vk.alpha_g1,
+            beta_g2: vk.beta_g2,
+            gamma_g2: vk.gamma_g2,
+            delta_g2: vk.delta_g2,
+            ic,
+        };
+
+        // Verify using existing Groth16 verification function
+        let pub_inputs = PublicInputs { inputs };
+        verify_groth16_with_alt_bn254(&proof, &pub_inputs, &verifying_key)?;
+
+        msg!(
+            "Batch proof verified successfully for batch_id: {}",
+            public_inputs.batch_id
+        );
+        Ok(())
+    }
+}
+
+/// Convert batch public inputs to field elements for Groth16 verification
+/// The circuit expects 7 public inputs in this order
+fn batch_inputs_to_field_elements(inputs: &BatchPublicInputs) -> Vec<[u8; 32]> {
+    vec![
+        inputs.pre_state_root,
+        inputs.post_state_root,
+        inputs.pre_shielded_root,
+        inputs.post_shielded_root,
+        inputs.withdrawal_root,
+        inputs.batch_hash,
+        // batch_id as 32-byte big-endian field element
+        {
+            let mut bytes = [0u8; 32];
+            bytes[24..].copy_from_slice(&inputs.batch_id.to_be_bytes());
+            bytes
+        },
+    ]
 }
 
 /// Verify Groth16 proof using Solana's alt-bn254 syscalls
