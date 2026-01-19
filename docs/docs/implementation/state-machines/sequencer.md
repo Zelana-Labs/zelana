@@ -274,6 +274,36 @@ The Zelana sequencer is an L2 sequencer for a Solana-based rollup. It receives e
 
 ## 4. Batch/Block Lifecycle States
 
+### Key Concept: Batch vs Block
+
+In Zelana, **a Block is the finalized form of a Batch**. They have a 1:1 relationship:
+
+| Aspect | Batch | Block |
+|--------|-------|-------|
+| **When** | During processing (Accumulating → Settling) | After finalization (Finalized state) |
+| **Contains** | Full tx data, diffs, proofs | Compact 96-byte header |
+| **Storage** | `CF_BATCHES` (BatchSummary JSON) | `CF_BLOCKS` (BlockHeader binary) |
+| **ID** | `batch_id: u64` | Same `batch_id` |
+
+The `batch_id` serves as the block number. When a batch reaches `Finalized` state, a `BlockHeader` is created and stored.
+
+### BlockHeader Structure
+
+```rust
+pub struct BlockHeader {
+    pub magic: [u8; 4],       // "ZLNA" - identifies Zelana blocks
+    pub hdr_version: u16,     // Currently 1  
+    pub batch_id: u64,        // Same ID as the batch (block number)
+    pub prev_root: [u8; 32],  // State root before batch execution
+    pub new_root: [u8; 32],   // State root after batch execution
+    pub tx_count: u32,        // Number of transactions in this block
+    pub open_at: u64,         // Timestamp when batch was opened
+    pub flags: u32,           // Reserved for future use
+}
+```
+
+### State Diagram
+
 ```
 +------------------+
 | GENESIS          |

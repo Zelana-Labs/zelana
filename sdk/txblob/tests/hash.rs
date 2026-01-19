@@ -1,4 +1,4 @@
-use txblob::{EncryptedTxBlobV1, encrypt_signed_tx, tx_blob_hash};
+use txblob::{encrypt_signed_tx, tx_blob_hash};
 use x25519_dalek::{PublicKey, StaticSecret};
 use zelana_account::AccountId;
 use zelana_transaction::{SignedTransaction, TransactionData};

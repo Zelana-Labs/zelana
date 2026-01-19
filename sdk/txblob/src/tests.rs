@@ -1,6 +1,5 @@
 #[cfg(test)]
 mod tests {
-    use super::*;
     use chacha20poly1305::aead::rand_core::OsRng;
     use x25519_dalek::{PublicKey, StaticSecret};
     use zelana_transaction::{SignedTransaction, TransactionData};
