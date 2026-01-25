@@ -29,6 +29,7 @@ use std::time::Duration;
 use anyhow::{Context, Result, bail};
 use solana_client::rpc_client::RpcClient;
 use solana_commitment_config::CommitmentConfig;
+use solana_compute_budget_interface::ComputeBudgetInstruction;
 use solana_sdk::{
     instruction::{AccountMeta, Instruction},
     pubkey::Pubkey,
@@ -326,6 +327,246 @@ impl Settler {
         match status {
             Some(result) => Ok(result.is_ok()),
             None => Ok(false),
+        }
+    }
+
+    /// Submit a Noir/Sunspot proof for verification on L1
+    ///
+    /// This method submits the proof directly to the Sunspot verifier program
+    /// for on-chain verification. Unlike Groth16, Sunspot uses a different
+    /// instruction format with 388-byte proofs and 236-byte public witnesses.
+    ///
+    /// # Arguments
+    /// * `proof` - The BatchProof containing Noir proof data (388 bytes)
+    /// * `prev_batch_id` - Previous batch ID for state continuity
+    ///
+    /// # Returns
+    /// * `SettlementResult` with L1 transaction signature
+    ///
+    /// # Note
+    /// This method calls through the Bridge program. If Bridge is not deployed,
+    /// use `verify_sunspot_direct` instead for standalone verification.
+    pub fn submit_sunspot_proof(
+        &self,
+        proof: &BatchProof,
+        prev_batch_id: u64,
+    ) -> Result<SettlementResult> {
+        // Validate this is a Noir proof
+        let noir_proof = NoirProofData::from_batch_proof(proof)?;
+        noir_proof.validate()?;
+
+        let (config_pda, _state_pda) = self.get_pdas()?;
+        let inputs = &proof.public_inputs;
+
+        // Get Sunspot verifier program ID
+        let sunspot_verifier = Pubkey::from_str(SUNSPOT_VERIFIER_PROGRAM_ID)
+            .context("invalid Sunspot verifier program ID")?;
+
+        // Derive VK PDA for Sunspot verifier (uses same pattern as arkworks verifier)
+        let (vk_pda, _) =
+            Pubkey::find_program_address(&[b"batch_vk", &self.config.domain], &sunspot_verifier);
+
+        // Build instruction data for Sunspot verification
+        // Instruction discriminator: 3 = SubmitBatch (same as Groth16 flow)
+        let mut data = vec![3u8];
+
+        // SubmitBatchHeader: 56 bytes
+        // prev_batch_index: u64 (8 bytes)
+        data.extend_from_slice(&prev_batch_id.to_le_bytes());
+        // new_batch_index: u64 (8 bytes)
+        data.extend_from_slice(&inputs.batch_id.to_le_bytes());
+        // new_state_root: [u8; 32] (32 bytes)
+        data.extend_from_slice(&inputs.post_state_root);
+        // proof_len: u32 (4 bytes) - Sunspot = 388 bytes
+        let proof_len = noir_proof.proof_bytes.len() as u32;
+        data.extend_from_slice(&proof_len.to_le_bytes());
+        // withdrawal_count: u32 (4 bytes) - 0 for now
+        let withdrawal_count: u32 = 0;
+        data.extend_from_slice(&withdrawal_count.to_le_bytes());
+
+        let header_end = data.len();
+        tracing::info!(
+            "Sunspot SubmitBatchHeader: {} bytes (expected 57)",
+            header_end
+        );
+
+        // Proof bytes (388 bytes for Sunspot)
+        data.extend_from_slice(&noir_proof.proof_bytes);
+
+        let proof_end = data.len();
+        tracing::info!(
+            "After Sunspot proof: {} bytes (expected {})",
+            proof_end,
+            57 + NoirProofData::PROOF_SIZE
+        );
+
+        // Public witness (236 bytes for Sunspot)
+        data.extend_from_slice(&noir_proof.public_witness);
+
+        tracing::info!("Total Sunspot instruction data: {} bytes", data.len());
+
+        // Build accounts list for Sunspot verification
+        // Accounts order matches Bridge IDL:
+        // 0. sequencer (signer)
+        // 1. config (writable)
+        // 2. verifier_program (Sunspot)
+        // 3. vk_account
+        let accounts = vec![
+            AccountMeta::new(self.sequencer_keypair.pubkey(), true), // sequencer (signer)
+            AccountMeta::new(config_pda, false),                     // config (writable)
+            AccountMeta::new_readonly(sunspot_verifier, false),      // Sunspot verifier program
+            AccountMeta::new_readonly(vk_pda, false),                // vk_account
+        ];
+
+        let instruction = Instruction {
+            program_id: self.program_id,
+            accounts,
+            data,
+        };
+
+        // Compute budget: Sunspot verification uses ~500k CU
+        let compute_budget_ix = ComputeBudgetInstruction::set_compute_unit_limit(500_000);
+        let priority_fee_ix = ComputeBudgetInstruction::set_compute_unit_price(1000);
+
+        // Build and send transaction
+        let recent_blockhash = self
+            .rpc
+            .get_latest_blockhash()
+            .context("failed to get blockhash")?;
+
+        let tx = Transaction::new_signed_with_payer(
+            &[compute_budget_ix, priority_fee_ix, instruction],
+            Some(&self.sequencer_keypair.pubkey()),
+            &[&self.sequencer_keypair],
+            recent_blockhash,
+        );
+
+        let signature = self.rpc.send_and_confirm_transaction(&tx).map_err(|e| {
+            tracing::error!("Sunspot settlement transaction failed: {:?}", e);
+            anyhow::anyhow!("failed to submit Sunspot proof: {}", e)
+        })?;
+
+        tracing::info!(
+            "Sunspot proof verified on L1: batch={}, tx={}",
+            inputs.batch_id,
+            signature
+        );
+
+        Ok(SettlementResult {
+            tx_signature: signature.to_string(),
+            batch_id: inputs.batch_id,
+            confirmed: true,
+            slot: None,
+        })
+    }
+
+    /// Verify a Noir/Sunspot proof directly against the Sunspot verifier program.
+    ///
+    /// This bypasses the Bridge program and calls the Sunspot verifier directly.
+    /// Use this for testing or when Bridge is not deployed.
+    ///
+    /// The Sunspot verifier expects:
+    /// - No accounts (VK is embedded in the program)
+    /// - Instruction data: proof_bytes (388) + public_witness_bytes (236)
+    ///
+    /// # Arguments
+    /// * `proof` - The batch proof with 388-byte Noir proof
+    ///
+    /// # Returns
+    /// * `SettlementResult` with L1 transaction signature
+    pub fn verify_sunspot_direct(&self, proof: &BatchProof) -> Result<SettlementResult> {
+        // Validate this is a Noir proof
+        let noir_proof = NoirProofData::from_batch_proof(proof)?;
+        noir_proof.validate()?;
+
+        let inputs = &proof.public_inputs;
+
+        // Get Sunspot verifier program ID
+        let sunspot_verifier = Pubkey::from_str(SUNSPOT_VERIFIER_PROGRAM_ID)
+            .context("invalid Sunspot verifier program ID")?;
+
+        // Build instruction data: proof + public_witness (no header, no accounts)
+        let mut instruction_data =
+            Vec::with_capacity(NoirProofData::PROOF_SIZE + NoirProofData::PUBLIC_WITNESS_SIZE);
+        instruction_data.extend_from_slice(&noir_proof.proof_bytes);
+        instruction_data.extend_from_slice(&noir_proof.public_witness);
+
+        tracing::info!(
+            "Sunspot direct verification: {} bytes (proof={}, pw={})",
+            instruction_data.len(),
+            noir_proof.proof_bytes.len(),
+            noir_proof.public_witness.len()
+        );
+
+        // Create verify instruction (no accounts needed for Sunspot verifier)
+        let verify_ix = Instruction {
+            program_id: sunspot_verifier,
+            accounts: vec![],
+            data: instruction_data,
+        };
+
+        // Compute budget: Sunspot verification uses ~500k CU
+        let compute_budget_ix = ComputeBudgetInstruction::set_compute_unit_limit(500_000);
+        let priority_fee_ix = ComputeBudgetInstruction::set_compute_unit_price(1000);
+
+        // Build and send transaction
+        let recent_blockhash = self
+            .rpc
+            .get_latest_blockhash()
+            .context("failed to get blockhash")?;
+
+        let tx = Transaction::new_signed_with_payer(
+            &[compute_budget_ix, priority_fee_ix, verify_ix],
+            Some(&self.sequencer_keypair.pubkey()),
+            &[&self.sequencer_keypair],
+            recent_blockhash,
+        );
+
+        let signature = self.rpc.send_and_confirm_transaction(&tx).map_err(|e| {
+            tracing::error!("Sunspot direct verification failed: {:?}", e);
+            anyhow::anyhow!("failed to verify Sunspot proof: {}", e)
+        })?;
+
+        tracing::info!(
+            "Sunspot proof verified directly on L1: batch={}, tx={}",
+            inputs.batch_id,
+            signature
+        );
+
+        Ok(SettlementResult {
+            tx_signature: signature.to_string(),
+            batch_id: inputs.batch_id,
+            confirmed: true,
+            slot: None,
+        })
+    }
+
+    /// Determine if a proof is a Noir/Sunspot proof based on size
+    pub fn is_noir_proof(proof: &BatchProof) -> bool {
+        proof.proof_bytes.len() == NoirProofData::PROOF_SIZE
+    }
+
+    /// Submit proof with automatic format detection
+    ///
+    /// Automatically detects whether the proof is Groth16 (256 bytes) or
+    /// Noir/Sunspot (388 bytes) and routes to the appropriate submission method.
+    pub fn submit_proof_auto(
+        &self,
+        proof: &BatchProof,
+        prev_batch_id: u64,
+    ) -> Result<SettlementResult> {
+        if Self::is_noir_proof(proof) {
+            tracing::info!(
+                "Detected Noir/Sunspot proof ({} bytes), using Sunspot verifier",
+                proof.proof_bytes.len()
+            );
+            self.submit_sunspot_proof(proof, prev_batch_id)
+        } else {
+            tracing::info!(
+                "Detected Groth16 proof ({} bytes), using arkworks verifier",
+                proof.proof_bytes.len()
+            );
+            self.submit_state_update(proof, prev_batch_id)
         }
     }
 
@@ -639,6 +880,92 @@ pub struct WithdrawalExecutionResult {
     pub retries: u32,
 }
 
+// ============================================================================
+// Noir/Sunspot Proof Types
+// ============================================================================
+
+/// Sunspot verifier program ID (devnet verified)
+pub const SUNSPOT_VERIFIER_PROGRAM_ID: &str = "EZzyLrTrC4uyU488jVAs4GKeCR1s9GmoFggeiDqwDeNK";
+
+/// Noir proof format for Sunspot verification
+#[derive(Debug, Clone)]
+pub struct NoirProofData {
+    /// Proof bytes (388 bytes for Noir/Sunspot)
+    pub proof_bytes: Vec<u8>,
+    /// Public witness (236 bytes - 7 field elements)
+    pub public_witness: Vec<u8>,
+}
+
+impl NoirProofData {
+    /// Expected proof size for Noir/Sunspot proofs
+    pub const PROOF_SIZE: usize = 388;
+    /// Expected public witness size (7 field elements × ~33-34 bytes)
+    pub const PUBLIC_WITNESS_SIZE: usize = 236;
+
+    /// Validate proof format
+    pub fn validate(&self) -> Result<()> {
+        if self.proof_bytes.len() != Self::PROOF_SIZE {
+            bail!(
+                "invalid Noir proof size: {} bytes (expected {})",
+                self.proof_bytes.len(),
+                Self::PROOF_SIZE
+            );
+        }
+        if self.public_witness.len() != Self::PUBLIC_WITNESS_SIZE {
+            bail!(
+                "invalid public witness size: {} bytes (expected {})",
+                self.public_witness.len(),
+                Self::PUBLIC_WITNESS_SIZE
+            );
+        }
+        Ok(())
+    }
+
+    /// Build from BatchProof (for proofs generated by Noir prover)
+    pub fn from_batch_proof(proof: &BatchProof) -> Result<Self> {
+        // Check if this is a Noir proof (388 bytes) or Groth16 (256 bytes)
+        if proof.proof_bytes.len() == Self::PROOF_SIZE {
+            // Extract public witness from BatchPublicInputs
+            let mut public_witness = Vec::with_capacity(Self::PUBLIC_WITNESS_SIZE);
+
+            // 7 public inputs for Noir circuit:
+            // 1. pre_state_root (32 bytes + length prefix)
+            // 2. post_state_root (32 bytes + length prefix)
+            // 3. pre_shielded_root (32 bytes + length prefix)
+            // 4. post_shielded_root (32 bytes + length prefix)
+            // 5. withdrawal_root (32 bytes + length prefix)
+            // 6. batch_hash (32 bytes + length prefix)
+            // 7. batch_id (field element)
+
+            // For now, build the witness as the raw field elements
+            // The prover-coordinator returns formatted public witness
+            public_witness.extend_from_slice(&proof.public_inputs.pre_state_root);
+            public_witness.extend_from_slice(&proof.public_inputs.post_state_root);
+            public_witness.extend_from_slice(&proof.public_inputs.pre_shielded_root);
+            public_witness.extend_from_slice(&proof.public_inputs.post_shielded_root);
+            public_witness.extend_from_slice(&proof.public_inputs.withdrawal_root);
+            public_witness.extend_from_slice(&proof.public_inputs.batch_hash);
+            public_witness.extend_from_slice(&proof.public_inputs.batch_id.to_le_bytes());
+
+            // Pad to expected size if needed (Noir uses 32-byte fields)
+            while public_witness.len() < Self::PUBLIC_WITNESS_SIZE {
+                public_witness.push(0);
+            }
+
+            Ok(Self {
+                proof_bytes: proof.proof_bytes.clone(),
+                public_witness,
+            })
+        } else {
+            bail!(
+                "proof is not a Noir proof: {} bytes (expected {})",
+                proof.proof_bytes.len(),
+                Self::PROOF_SIZE
+            );
+        }
+    }
+}
+
 /// Current L1 state
 #[derive(Debug, Clone)]
 pub struct L1State {
@@ -726,6 +1053,45 @@ impl SettlerService {
     ) -> Vec<WithdrawalExecutionResult> {
         let settler = self.settler.lock().await;
         settler.execute_withdrawals_batched(batch_id, withdrawals)
+    }
+
+    /// Submit a Noir/Sunspot proof for verification on L1
+    ///
+    /// Uses the Sunspot verifier program for 388-byte Noir proofs.
+    pub async fn submit_sunspot(
+        &self,
+        proof: &BatchProof,
+        prev_batch_id: u64,
+    ) -> Result<SettlementResult> {
+        let settler = self.settler.lock().await;
+        settler.submit_sunspot_proof(proof, prev_batch_id)
+    }
+
+    /// Submit proof with automatic format detection
+    ///
+    /// Automatically detects whether the proof is Groth16 (256 bytes) or
+    /// Noir/Sunspot (388 bytes) and routes to the appropriate verifier.
+    pub async fn submit_auto(
+        &self,
+        proof: &BatchProof,
+        prev_batch_id: u64,
+    ) -> Result<SettlementResult> {
+        let settler = self.settler.lock().await;
+        settler.submit_proof_auto(proof, prev_batch_id)
+    }
+
+    /// Check if a proof is a Noir/Sunspot proof
+    pub fn is_noir_proof(proof: &BatchProof) -> bool {
+        Settler::is_noir_proof(proof)
+    }
+
+    /// Verify a Noir/Sunspot proof directly against the Sunspot verifier.
+    ///
+    /// This bypasses the Bridge program and calls the Sunspot verifier directly.
+    /// Use this for testing or when Bridge is not deployed.
+    pub async fn verify_sunspot_direct(&self, proof: &BatchProof) -> Result<SettlementResult> {
+        let settler = self.settler.lock().await;
+        settler.verify_sunspot_direct(proof)
     }
 }
 

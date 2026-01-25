@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::{env, fs};
 
-use crate::sequencer::{BatchConfig, PipelineConfig, SettlerConfig};
+use crate::sequencer::{BatchConfig, PipelineConfig, ProverMode, SettlerConfig};
 
 const CONFIG_FILE_NAME: &str = "config.toml";
 const CONFIG_DIR_NAME: &str = ".zelana";
@@ -85,14 +85,21 @@ fn default_db_path() -> String {
 /// Pipeline configuration (TOML format)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PipelineTomlConfig {
-    #[serde(default = "default_true")]
-    pub mock_prover: bool,
+    /// Prover mode: "mock", "groth16", or "noir" (default: "mock")
+    #[serde(default)]
+    pub prover_mode: ProverModeToml,
     #[serde(default)]
     pub settlement_enabled: bool,
     #[serde(default)]
     pub proving_key_path: Option<String>,
     #[serde(default)]
     pub verifying_key_path: Option<String>,
+    /// Noir coordinator URL (for prover_mode = "noir")
+    #[serde(default)]
+    pub noir_coordinator_url: Option<String>,
+    /// Noir proof timeout in seconds (default: 300)
+    #[serde(default)]
+    pub noir_proof_timeout_secs: Option<u64>,
     #[serde(default)]
     pub sequencer_keypair_path: Option<String>,
     #[serde(default = "default_max_retries")]
@@ -103,23 +110,41 @@ pub struct PipelineTomlConfig {
     pub poll_interval_ms: u64,
 }
 
+/// Prover mode for TOML config (string-based for easier config)
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum ProverModeToml {
+    #[default]
+    Mock,
+    Groth16,
+    Noir,
+}
+
+impl From<ProverModeToml> for ProverMode {
+    fn from(mode: ProverModeToml) -> Self {
+        match mode {
+            ProverModeToml::Mock => ProverMode::Mock,
+            ProverModeToml::Groth16 => ProverMode::Groth16,
+            ProverModeToml::Noir => ProverMode::Noir,
+        }
+    }
+}
+
 impl Default for PipelineTomlConfig {
     fn default() -> Self {
         Self {
-            mock_prover: true,
+            prover_mode: ProverModeToml::Mock,
             settlement_enabled: false,
             proving_key_path: None,
             verifying_key_path: None,
+            noir_coordinator_url: None,
+            noir_proof_timeout_secs: None,
             sequencer_keypair_path: None,
             max_settlement_retries: default_max_retries(),
             settlement_retry_base_ms: default_retry_base_ms(),
             poll_interval_ms: default_poll_interval(),
         }
     }
-}
-
-fn default_true() -> bool {
-    true
 }
 
 fn default_max_retries() -> u32 {
@@ -335,9 +360,22 @@ impl ZelanaConfig {
             self.solana.domain = Some(v);
         }
 
-        // Pipeline
+        // Pipeline - prover mode
+        if let Ok(v) = env::var("ZL_PROVER_MODE") {
+            match v.to_lowercase().as_str() {
+                "mock" => self.pipeline.prover_mode = ProverModeToml::Mock,
+                "groth16" => self.pipeline.prover_mode = ProverModeToml::Groth16,
+                "noir" => self.pipeline.prover_mode = ProverModeToml::Noir,
+                _ => {} // ignore invalid values
+            }
+        }
+        // Legacy: ZL_MOCK_PROVER still supported for backwards compatibility
         if let Ok(v) = env::var("ZL_MOCK_PROVER") {
-            self.pipeline.mock_prover = v != "0" && v.to_lowercase() != "false";
+            if v != "0" && v.to_lowercase() != "false" {
+                self.pipeline.prover_mode = ProverModeToml::Mock;
+            } else {
+                self.pipeline.prover_mode = ProverModeToml::Groth16;
+            }
         }
         if let Ok(v) = env::var("ZL_SETTLEMENT_ENABLED") {
             self.pipeline.settlement_enabled = v == "1" || v.to_lowercase() == "true";
@@ -347,6 +385,14 @@ impl ZelanaConfig {
         }
         if let Ok(v) = env::var("ZL_VERIFYING_KEY") {
             self.pipeline.verifying_key_path = Some(v);
+        }
+        if let Ok(v) = env::var("ZL_NOIR_COORDINATOR_URL") {
+            self.pipeline.noir_coordinator_url = Some(v);
+        }
+        if let Ok(v) = env::var("ZL_NOIR_PROOF_TIMEOUT_SECS") {
+            if let Ok(n) = v.parse() {
+                self.pipeline.noir_proof_timeout_secs = Some(n);
+            }
         }
         if let Ok(v) = env::var("ZL_SEQUENCER_KEYPAIR") {
             self.pipeline.sequencer_keypair_path = Some(v);
@@ -438,9 +484,11 @@ impl ZelanaConfig {
             };
 
         PipelineConfig {
-            mock_prover: self.pipeline.mock_prover,
+            prover_mode: self.pipeline.prover_mode.clone().into(),
             proving_key_path: self.pipeline.proving_key_path.clone(),
             verifying_key_path: self.pipeline.verifying_key_path.clone(),
+            noir_coordinator_url: self.pipeline.noir_coordinator_url.clone(),
+            noir_proof_timeout_secs: self.pipeline.noir_proof_timeout_secs,
             settlement_enabled: self.pipeline.settlement_enabled,
             sequencer_keypair_path: self.pipeline.sequencer_keypair_path.clone(),
             max_settlement_retries: self.pipeline.max_settlement_retries,
@@ -469,10 +517,12 @@ impl ZelanaConfig {
                 path: "./zelana-db".to_string(),
             },
             pipeline: PipelineTomlConfig {
-                mock_prover: true,
+                prover_mode: ProverModeToml::Mock,
                 settlement_enabled: false,
                 proving_key_path: None,
                 verifying_key_path: None,
+                noir_coordinator_url: None,
+                noir_proof_timeout_secs: None,
                 sequencer_keypair_path: None,
                 max_settlement_retries: 5,
                 settlement_retry_base_ms: 5000,
@@ -514,7 +564,7 @@ mod tests {
         let config = ZelanaConfig::default();
         assert_eq!(config.api.port, 8080);
         assert_eq!(config.database.path, "./zelana-db");
-        assert!(config.pipeline.mock_prover);
+        assert_eq!(config.pipeline.prover_mode, ProverModeToml::Mock);
         assert!(!config.pipeline.settlement_enabled);
     }
 

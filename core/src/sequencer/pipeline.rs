@@ -40,6 +40,7 @@ use crate::sequencer::bridge::withdrawals::{
 };
 use crate::sequencer::execution::batch::{BatchConfig, BatchManager, BatchManagerStats};
 use crate::sequencer::execution::tx_router::TxResultType;
+use crate::sequencer::settlement::noir_client::{NoirProverClient, NoirProverConfig};
 use crate::sequencer::settlement::prover::compute_batch_hash;
 use crate::sequencer::settlement::prover::{
     BatchProof, BatchProver, BatchPublicInputs, Groth16Prover, MockProver, build_public_inputs,
@@ -53,12 +54,31 @@ use zelana_transaction::TransactionType;
 
 // Configuration
 
+/// Prover mode selection
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub enum ProverMode {
+    /// Mock prover for testing (default)
+    #[default]
+    Mock,
+    /// Real Groth16 prover using arkworks
+    Groth16,
+    /// Noir/Sunspot prover via HTTP coordinator
+    Noir,
+}
+
 /// Pipeline configuration
 #[derive(Debug, Clone)]
 pub struct PipelineConfig {
-    pub mock_prover: bool, // switch between mockprover and groth16
+    /// Prover mode selection (Mock, Groth16, or Noir)
+    pub prover_mode: ProverMode,
+    /// Path to proving key (for Groth16 mode)
     pub proving_key_path: Option<String>,
+    /// Path to verifying key (for Groth16 mode)
     pub verifying_key_path: Option<String>,
+    /// Noir coordinator URL (for Noir mode, e.g., "http://localhost:8080")
+    pub noir_coordinator_url: Option<String>,
+    /// Noir proof generation timeout in seconds (default: 300)
+    pub noir_proof_timeout_secs: Option<u64>,
     pub settlement_enabled: bool,
     pub sequencer_keypair_path: Option<String>,
     /// Maximum retry attempts for settlement
@@ -78,9 +98,11 @@ pub struct PipelineConfig {
 impl Default for PipelineConfig {
     fn default() -> Self {
         Self {
-            mock_prover: true,
+            prover_mode: ProverMode::Mock,
             proving_key_path: None,
             verifying_key_path: None,
+            noir_coordinator_url: None,
+            noir_proof_timeout_secs: None,
             settlement_enabled: false,
             sequencer_keypair_path: None,
             max_settlement_retries: 5,
@@ -164,8 +186,8 @@ pub struct PipelineOrchestrator {
     /// Batch manager (shared with command handler)
     batch_manager: Arc<Mutex<BatchManager>>,
     prover: Arc<dyn BatchProver>,
-    mock_settler: Option<Arc<Mutex<MockSettler>>>, // only for local tests 
-    settler_service: Option<Arc<SettlerService>>, // settlement service 
+    mock_settler: Option<Arc<Mutex<MockSettler>>>, // only for local tests
+    settler_service: Option<Arc<SettlerService>>,  // settlement service
     config: PipelineConfig,
     state: PipelineState,
     batches_proved: u64,
@@ -190,37 +212,68 @@ impl PipelineOrchestrator {
         let batch_manager = BatchManager::new(db.clone(), config.batch_config.clone())?;
 
         // Create prover based on config
-        let prover: Arc<dyn BatchProver> = if config.mock_prover {
-            info!("Using MockProver for batch proving");
-            Arc::new(MockProver::new())
-        } else {
-            // Try to load real Groth16 prover from key files
-            match (&config.proving_key_path, &config.verifying_key_path) {
-                (Some(pk_path), Some(vk_path)) => {
-                    info!("Loading Groth16 prover from key files");
-                    info!("  Proving key:   {}", pk_path);
-                    info!("  Verifying key: {}", vk_path);
-                    match Groth16Prover::from_files(pk_path, vk_path) {
-                        Ok(prover) => {
-                            info!("Groth16 prover initialized successfully");
-                            Arc::new(prover)
-                        }
-                        Err(e) => {
-                            warn!(
-                                "Failed to load Groth16 prover: {}. Falling back to MockProver",
-                                e
-                            );
-                            Arc::new(MockProver::new())
+        let prover: Arc<dyn BatchProver> = match &config.prover_mode {
+            ProverMode::Mock => {
+                info!("Using MockProver for batch proving");
+                Arc::new(MockProver::new())
+            }
+            ProverMode::Groth16 => {
+                // Try to load real Groth16 prover from key files
+                match (&config.proving_key_path, &config.verifying_key_path) {
+                    (Some(pk_path), Some(vk_path)) => {
+                        info!("Loading Groth16 prover from key files");
+                        info!("  Proving key:   {}", pk_path);
+                        info!("  Verifying key: {}", vk_path);
+                        match Groth16Prover::from_files(pk_path, vk_path) {
+                            Ok(prover) => {
+                                info!("Groth16 prover initialized successfully");
+                                Arc::new(prover)
+                            }
+                            Err(e) => {
+                                warn!(
+                                    "Failed to load Groth16 prover: {}. Falling back to MockProver",
+                                    e
+                                );
+                                Arc::new(MockProver::new())
+                            }
                         }
                     }
+                    _ => {
+                        warn!(
+                            "Groth16 prover requested but key paths not configured. \
+                            Set ZL_PROVING_KEY and ZL_VERIFYING_KEY environment variables. \
+                            Using MockProver instead."
+                        );
+                        Arc::new(MockProver::new())
+                    }
                 }
-                _ => {
-                    warn!(
-                        "Real Groth16 prover requested but key paths not configured. \
-                        Set ZL_PROVING_KEY and ZL_VERIFYING_KEY environment variables. \
-                        Using MockProver instead."
-                    );
-                    Arc::new(MockProver::new())
+            }
+            ProverMode::Noir => {
+                // Create Noir prover client for HTTP coordinator
+                match &config.noir_coordinator_url {
+                    Some(url) => {
+                        info!("Using Noir prover via HTTP coordinator");
+                        info!("  Coordinator URL: {}", url);
+                        let mut noir_config = NoirProverConfig::default();
+                        noir_config.coordinator_url = url.clone();
+                        if let Some(timeout_secs) = config.noir_proof_timeout_secs {
+                            noir_config.proof_timeout =
+                                std::time::Duration::from_secs(timeout_secs);
+                        }
+                        info!(
+                            "  Proof timeout:   {} seconds",
+                            noir_config.proof_timeout.as_secs()
+                        );
+                        Arc::new(NoirProverClient::new(noir_config))
+                    }
+                    None => {
+                        warn!(
+                            "Noir prover requested but coordinator URL not configured. \
+                            Set ZL_NOIR_COORDINATOR_URL environment variable. \
+                            Using MockProver instead."
+                        );
+                        Arc::new(MockProver::new())
+                    }
                 }
             }
         };
@@ -476,13 +529,26 @@ impl PipelineOrchestrator {
         let prev_batch_id = if batch_id > 1 { batch_id - 1 } else { 0 };
 
         // Settle using mock or real settler (with withdrawals)
+        // Uses automatic proof format detection to route to correct verifier
         let result = if let Some(ref settler_svc) = self.settler_service {
+            // Use submit_auto to automatically detect Groth16 vs Noir/Sunspot proofs
+            // For now, withdrawals are only supported with Groth16 proofs
             if withdrawals.is_empty() {
-                settler_svc.submit(&proof, prev_batch_id).await
+                settler_svc.submit_auto(&proof, prev_batch_id).await
             } else {
-                settler_svc
-                    .submit_with_withdrawals(&proof, prev_batch_id, &withdrawals)
-                    .await
+                // Withdrawals require the full submit_with_withdrawals flow
+                // which currently only works with Groth16 proofs
+                if SettlerService::is_noir_proof(&proof) {
+                    warn!(
+                        "Noir proofs with withdrawals not yet supported. \
+                        Submitting proof without withdrawal processing."
+                    );
+                    settler_svc.submit_auto(&proof, prev_batch_id).await
+                } else {
+                    settler_svc
+                        .submit_with_withdrawals(&proof, prev_batch_id, &withdrawals)
+                        .await
+                }
             }
         } else if let Some(ref mock_settler) = self.mock_settler {
             let mut settler = mock_settler.lock().await;
@@ -535,8 +601,15 @@ impl PipelineOrchestrator {
                     warn!(batch_id, error = %e, "Failed to store batch summary");
                 }
 
-                // Update all transaction statuses to Settled
+                // Update transaction statuses: Failed stays Failed, others become Settled
                 for tx_hash in &tx_hashes {
+                    // Check current status - don't overwrite Failed transactions
+                    if let Ok(Some(summary)) = self.db.get_tx_summary(tx_hash) {
+                        if summary.status == TxStatus::Failed {
+                            // Transaction already failed during execution, don't change to Settled
+                            continue;
+                        }
+                    }
                     if let Err(e) =
                         self.db
                             .update_tx_status(tx_hash, TxStatus::Settled, Some(batch_id))
@@ -874,7 +947,7 @@ mod tests {
     #[tokio::test]
     async fn test_pipeline_config_default() {
         let config = PipelineConfig::default();
-        assert!(config.mock_prover);
+        assert_eq!(config.prover_mode, ProverMode::Mock);
         assert!(!config.settlement_enabled);
         assert_eq!(config.max_settlement_retries, 5);
     }

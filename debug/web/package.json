@@ -1,0 +1,21 @@
+{
+  "name": "zelana-debug-dashboard",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently \"bun run dev:server\" \"bun run dev:client\"",
+    "dev:server": "bun run --watch server/index.ts",
+    "dev:client": "cd client && bunx vite",
+    "build": "cd client && bunx vite build",
+    "start": "bun run server/index.ts",
+    "db-reader": "cargo run -p db-reader --release"
+  },
+  "dependencies": {
+    "hono": "^4.6.0"
+  },
+  "devDependencies": {
+    "concurrently": "^9.0.0",
+    "@types/bun": "latest"
+  }
+}

@@ -1,0 +1,44 @@
+{
+  "name": "@zelana/react",
+  "version": "0.1.0",
+  "description": "React hooks for Zelana L2",
+  "type": "module",
+  "main": "dist/index.js",
+  "module": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src"
+  ],
+  "scripts": {
+    "build": "bun build src/index.ts --outdir dist --target browser --external react && tsc --emitDeclarationOnly --declaration --outDir dist",
+    "test": "bun test",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@zelana/sdk": "file:../typescript"
+  },
+  "peerDependencies": {
+    "react": ">=18.0.0"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@types/react": "^18.2.0",
+    "react": "^18.2.0",
+    "typescript": "^5.3.0"
+  },
+  "keywords": [
+    "zelana",
+    "solana",
+    "l2",
+    "react",
+    "hooks"
+  ],
+  "license": "MIT"
+}

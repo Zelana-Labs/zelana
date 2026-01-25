@@ -1,11 +1,33 @@
+# Build artifacts
 /target
 /data
-*.json
-.vscode
-.env
-.surfpool
-/zelana-db
-node_modules
-zelana-db_secondary
 dist
+
+# IDE
+.vscode
+
+# Environment files
+.env
+.env.*
+
+# Solana/Surfpool
+.surfpool
 keys
+
+# Database files (RocksDB)
+/zelana-db
+zelana-db_secondary
+zelana-db_secondary_secondary
+**/zelana-db_secondary_secondary
+
+# Dependencies
+node_modules
+
+# Separate repositories (zelana-forge has its own git)
+/zelana-forge
+
+# Config files (may contain local paths)
+*.json
+!package.json
+!package-lock.json
+!tsconfig.json

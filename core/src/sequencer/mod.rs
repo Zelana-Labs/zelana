@@ -17,12 +17,14 @@ pub use mempool::threshold_mempool::{
 
 pub use bridge::fast_withdrawals::{FastWithdrawConfig, FastWithdrawManager};
 pub use bridge::ingest::{IndexerConfig, start_indexer_with_pipeline};
-pub use bridge::withdrawals::{TrackedWithdrawal, WithdrawalQueue, WithdrawalState};
+pub use bridge::withdrawals::{
+    TrackedWithdrawal, WithdrawalQueue, WithdrawalState, build_withdrawal_merkle_root,
+};
 
 pub use settlement::prover::BatchProof;
 pub use settlement::settler::SettlerConfig;
 
-pub use pipeline::{PipelineConfig, PipelineService};
+pub use pipeline::{PipelineConfig, PipelineService, ProverMode};
 
 #[cfg(test)]
 mod tests;

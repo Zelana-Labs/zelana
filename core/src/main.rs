@@ -82,22 +82,34 @@ async fn main() -> Result<()> {
     info!("Batch max age     : {}s", batch_config.max_batch_age_secs);
     info!("Batch max shielded: {}", batch_config.max_shielded);
     info!("--------------------------------------------");
-    info!("Mock prover       : {}", pipeline_config.mock_prover);
-    if !pipeline_config.mock_prover {
-        info!(
-            "Proving key       : {}",
-            pipeline_config
-                .proving_key_path
-                .as_deref()
-                .unwrap_or("<not set>")
-        );
-        info!(
-            "Verifying key     : {}",
-            pipeline_config
-                .verifying_key_path
-                .as_deref()
-                .unwrap_or("<not set>")
-        );
+    info!("Prover mode       : {:?}", pipeline_config.prover_mode);
+    match &pipeline_config.prover_mode {
+        crate::sequencer::ProverMode::Groth16 => {
+            info!(
+                "Proving key       : {}",
+                pipeline_config
+                    .proving_key_path
+                    .as_deref()
+                    .unwrap_or("<not set>")
+            );
+            info!(
+                "Verifying key     : {}",
+                pipeline_config
+                    .verifying_key_path
+                    .as_deref()
+                    .unwrap_or("<not set>")
+            );
+        }
+        crate::sequencer::ProverMode::Noir => {
+            info!(
+                "Noir coordinator  : {}",
+                pipeline_config
+                    .noir_coordinator_url
+                    .as_deref()
+                    .unwrap_or("<not set>")
+            );
+        }
+        crate::sequencer::ProverMode::Mock => {}
     }
     info!("Settlement enabled: {}", pipeline_config.settlement_enabled);
     if pipeline_config.settlement_enabled {
@@ -147,12 +159,8 @@ async fn main() -> Result<()> {
             .expect("failed to start pipeline service"),
     );
     info!(
-        "Pipeline service started (prover: {}, settlement: {})",
-        if pipeline_config.mock_prover {
-            "mock"
-        } else {
-            "groth16"
-        },
+        "Pipeline service started (prover: {:?}, settlement: {})",
+        pipeline_config.prover_mode,
         if pipeline_config.settlement_enabled {
             "enabled"
         } else {

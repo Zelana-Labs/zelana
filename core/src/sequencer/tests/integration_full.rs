@@ -960,3 +960,333 @@ async fn test_pipeline_stores_batch_and_tx_summaries() {
 
     service.shutdown().await.unwrap();
 }
+
+// ============================================================================
+// End-to-End Shielded Transaction Tests
+// ============================================================================
+
+/// Tests shielded transaction through the full pipeline with MockProver
+#[tokio::test]
+async fn test_pipeline_shielded_transaction_end_to_end() {
+    use crate::sequencer::pipeline::{PipelineConfig, PipelineService, PipelineState};
+    use std::time::Duration;
+    use zelana_transaction::{PrivateTransaction, TransactionType};
+
+    let temp_dir = tempfile::TempDir::new().unwrap();
+    let db = Arc::new(RocksDbStore::open(temp_dir.path().to_str().unwrap()).unwrap());
+
+    // Configure fast pipeline for testing
+    let mut config = PipelineConfig::default();
+    config.poll_interval_ms = 10;
+    config.batch_config.max_transactions = 10;
+    config.batch_config.min_transactions = 1;
+
+    let service = PipelineService::start(db.clone(), config, None).unwrap();
+
+    // Submit a shielded transaction with mock proof
+    let nullifier = [0xAA; 32];
+    let commitment = [0xBB; 32];
+    let private_tx = PrivateTransaction {
+        proof: vec![1, 2, 3, 4], // Non-empty mock proof
+        nullifier,
+        commitment,
+        ciphertext: vec![0xCC; 64],
+        ephemeral_key: [0xDD; 32],
+    };
+
+    service
+        .submit(TransactionType::Shielded(private_tx))
+        .await
+        .unwrap();
+
+    // Seal the batch
+    let batch_id = service.seal().await.unwrap();
+    assert_eq!(batch_id, Some(1));
+
+    // Wait for batch to be proved and settled
+    for _ in 0..100 {
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        let stats = service.stats().await.unwrap();
+        if stats.batches_settled >= 1 {
+            break;
+        }
+    }
+
+    let stats = service.stats().await.unwrap();
+    assert_eq!(stats.state, PipelineState::Running);
+    assert_eq!(stats.batches_proved, 1);
+    assert_eq!(stats.batches_settled, 1);
+
+    // Verify the shielded transaction was recorded
+    let (txs, total) = db.list_transactions(0, 10, None, None, None).unwrap();
+    assert_eq!(total, 1);
+    assert_eq!(txs.len(), 1);
+
+    // Verify it's a shielded transaction
+    use crate::api::types::{TxStatus, TxType};
+    assert_eq!(txs[0].tx_type, TxType::Shielded);
+    assert_ne!(
+        txs[0].status,
+        TxStatus::Failed,
+        "Shielded tx should not fail"
+    );
+
+    service.shutdown().await.unwrap();
+}
+
+/// Tests that double-spend prevention works across batches
+#[tokio::test]
+async fn test_pipeline_shielded_double_spend_prevention() {
+    use crate::sequencer::pipeline::{PipelineConfig, PipelineService};
+    use std::time::Duration;
+    use zelana_transaction::{PrivateTransaction, TransactionType};
+
+    let temp_dir = tempfile::TempDir::new().unwrap();
+    let db = Arc::new(RocksDbStore::open(temp_dir.path().to_str().unwrap()).unwrap());
+
+    let mut config = PipelineConfig::default();
+    config.poll_interval_ms = 10;
+    config.batch_config.max_transactions = 10;
+    config.batch_config.min_transactions = 1;
+
+    let service = PipelineService::start(db.clone(), config, None).unwrap();
+
+    // Submit first shielded transaction
+    let nullifier = [0x11; 32];
+    let private_tx1 = PrivateTransaction {
+        proof: vec![1, 2, 3, 4],
+        nullifier, // This nullifier will be spent
+        commitment: [0x22; 32],
+        ciphertext: vec![0x33; 64],
+        ephemeral_key: [0x44; 32],
+    };
+
+    service
+        .submit(TransactionType::Shielded(private_tx1))
+        .await
+        .unwrap();
+
+    // Seal and wait for first batch
+    service.seal().await.unwrap();
+
+    for _ in 0..100 {
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        let stats = service.stats().await.unwrap();
+        if stats.batches_settled >= 1 {
+            break;
+        }
+    }
+
+    // Submit second shielded transaction with SAME nullifier (double-spend attempt)
+    let private_tx2 = PrivateTransaction {
+        proof: vec![5, 6, 7, 8],
+        nullifier, // Same nullifier - should be rejected
+        commitment: [0x55; 32],
+        ciphertext: vec![0x66; 64],
+        ephemeral_key: [0x77; 32],
+    };
+
+    service
+        .submit(TransactionType::Shielded(private_tx2))
+        .await
+        .unwrap();
+
+    // Seal and wait for second batch
+    service.seal().await.unwrap();
+
+    for _ in 0..100 {
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        let stats = service.stats().await.unwrap();
+        if stats.batches_settled >= 2 {
+            break;
+        }
+    }
+
+    // Verify transactions
+    use crate::api::types::TxStatus;
+    let (txs, total) = db.list_transactions(0, 10, None, None, None).unwrap();
+    assert_eq!(total, 2);
+
+    // First tx should succeed, second should fail (double-spend)
+    let tx1 = txs.iter().find(|t| t.batch_id == Some(1)).unwrap();
+    let tx2 = txs.iter().find(|t| t.batch_id == Some(2)).unwrap();
+
+    assert_ne!(
+        tx1.status,
+        TxStatus::Failed,
+        "First shielded tx should succeed"
+    );
+    assert_eq!(
+        tx2.status,
+        TxStatus::Failed,
+        "Double-spend attempt should fail: nullifier already spent"
+    );
+
+    service.shutdown().await.unwrap();
+}
+
+/// Tests the full L2 lifecycle: Deposit → Transfer → Shielded → Withdraw
+#[tokio::test]
+async fn test_pipeline_full_l2_cycle_with_shielded() {
+    use crate::api::types::{TxStatus, TxType};
+    use crate::sequencer::pipeline::{PipelineConfig, PipelineService, PipelineState};
+    use std::time::Duration;
+    use zelana_keypair::Keypair;
+    use zelana_transaction::{DepositEvent, PrivateTransaction, TransactionData, TransactionType};
+
+    let temp_dir = tempfile::TempDir::new().unwrap();
+    let db = Arc::new(RocksDbStore::open(temp_dir.path().to_str().unwrap()).unwrap());
+
+    let mut config = PipelineConfig::default();
+    config.poll_interval_ms = 10;
+    config.batch_config.max_transactions = 10;
+    config.batch_config.min_transactions = 1;
+
+    let service = PipelineService::start(db.clone(), config, None).unwrap();
+
+    // Create real keypairs for Alice and Bob
+    let alice_kp = Keypair::new_random();
+    let bob_kp = Keypair::new_random();
+    let alice = alice_kp.account_id();
+    let bob = bob_kp.account_id();
+
+    // ========================================================================
+    // Step 1: Deposit funds to Alice
+    // ========================================================================
+    service
+        .submit(TransactionType::Deposit(DepositEvent {
+            to: alice,
+            amount: 10_000,
+            l1_seq: 1,
+        }))
+        .await
+        .unwrap();
+
+    service.seal().await.unwrap();
+
+    for _ in 0..100 {
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        let stats = service.stats().await.unwrap();
+        if stats.batches_settled >= 1 {
+            break;
+        }
+    }
+
+    // ========================================================================
+    // Step 2: Transfer from Alice to Bob (with valid signature)
+    // ========================================================================
+    let transfer_data = TransactionData {
+        from: alice,
+        to: bob,
+        amount: 3_000,
+        nonce: 0,
+        chain_id: 1,
+    };
+    let signed_transfer = alice_kp.sign_transaction(transfer_data);
+
+    service
+        .submit(TransactionType::Transfer(signed_transfer))
+        .await
+        .unwrap();
+
+    service.seal().await.unwrap();
+
+    for _ in 0..100 {
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        let stats = service.stats().await.unwrap();
+        if stats.batches_settled >= 2 {
+            break;
+        }
+    }
+
+    // ========================================================================
+    // Step 3: Shielded transaction (privacy layer)
+    // ========================================================================
+    let private_tx = PrivateTransaction {
+        proof: vec![1, 2, 3, 4], // Mock proof
+        nullifier: [0xDE; 32],
+        commitment: [0xAD; 32],
+        ciphertext: vec![0xBE; 64],
+        ephemeral_key: [0xEF; 32],
+    };
+
+    service
+        .submit(TransactionType::Shielded(private_tx))
+        .await
+        .unwrap();
+
+    service.seal().await.unwrap();
+
+    for _ in 0..100 {
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        let stats = service.stats().await.unwrap();
+        if stats.batches_settled >= 3 {
+            break;
+        }
+    }
+
+    // ========================================================================
+    // Step 4: Withdraw from Bob to L1 (with valid signature)
+    // ========================================================================
+    let l1_dest: [u8; 32] = [0xFF; 32];
+    let withdraw = bob_kp.sign_withdrawal(l1_dest, 1_000, 0);
+
+    service
+        .submit(TransactionType::Withdraw(withdraw))
+        .await
+        .unwrap();
+
+    service.seal().await.unwrap();
+
+    for _ in 0..100 {
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        let stats = service.stats().await.unwrap();
+        if stats.batches_settled >= 4 {
+            break;
+        }
+    }
+
+    // ========================================================================
+    // Verify final state
+    // ========================================================================
+    let stats = service.stats().await.unwrap();
+    assert_eq!(stats.state, PipelineState::Running);
+    assert_eq!(stats.batches_proved, 4);
+    assert_eq!(stats.batches_settled, 4);
+
+    // Verify all transaction types were recorded
+    let (txs, total) = db.list_transactions(0, 10, None, None, None).unwrap();
+    assert_eq!(total, 4);
+
+    // Count transaction types
+    let deposit_count = txs.iter().filter(|t| t.tx_type == TxType::Deposit).count();
+    let transfer_count = txs.iter().filter(|t| t.tx_type == TxType::Transfer).count();
+    let shielded_count = txs.iter().filter(|t| t.tx_type == TxType::Shielded).count();
+    let withdraw_count = txs
+        .iter()
+        .filter(|t| t.tx_type == TxType::Withdrawal)
+        .count();
+
+    assert_eq!(deposit_count, 1, "Should have 1 deposit");
+    assert_eq!(transfer_count, 1, "Should have 1 transfer");
+    assert_eq!(shielded_count, 1, "Should have 1 shielded tx");
+    assert_eq!(withdraw_count, 1, "Should have 1 withdrawal");
+
+    // All transactions should succeed
+    for tx in &txs {
+        assert_ne!(
+            tx.status,
+            TxStatus::Failed,
+            "Transaction {:?} in batch {:?} should succeed",
+            tx.tx_type,
+            tx.batch_id
+        );
+    }
+
+    // Verify batch listing
+    let (batches, batch_total) = db.list_batches(0, 10).unwrap();
+    assert_eq!(batch_total, 4);
+    assert_eq!(batches.len(), 4);
+
+    service.shutdown().await.unwrap();
+}
