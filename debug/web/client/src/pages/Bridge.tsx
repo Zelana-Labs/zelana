@@ -77,6 +77,9 @@ function DepositsTab() {
   const { data, isLoading } = useQuery({
     queryKey: ["deposits", page, limit],
     queryFn: () => api.getDeposits(page * limit, limit),
+      refetchInterval: 1000,          // 🔥 live updates
+  refetchOnWindowFocus: true,     // 🔥 refetch when tab refocuses
+  staleTime: 0,   
   });
 
   return (

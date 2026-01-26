@@ -25,6 +25,9 @@ export default function Transactions() {
         tx_type: typeFilter !== "all" ? typeFilter : undefined,
         status: statusFilter !== "all" ? statusFilter : undefined,
       }),
+    refetchInterval: 1000,          // 🔥 live updates
+    refetchOnWindowFocus: true,     // 🔥 refetch when tab refocuses
+    staleTime: 0,
   });
 
   return (

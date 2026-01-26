@@ -11,6 +11,9 @@ export default function Blocks() {
   const { data, isLoading } = useQuery({
     queryKey: ["blocks", page, limit],
     queryFn: () => api.getBlocks(page * limit, limit),
+      refetchInterval: 1000,          // 🔥 live updates
+  refetchOnWindowFocus: true,     // 🔥 refetch when tab refocuses
+  staleTime: 0,   
   });
 
   return (

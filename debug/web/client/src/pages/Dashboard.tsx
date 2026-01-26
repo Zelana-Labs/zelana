@@ -17,16 +17,25 @@ export default function Dashboard() {
   const { data: stats, isLoading: statsLoading } = useQuery({
     queryKey: ["stats"],
     queryFn: api.getStats,
+    refetchInterval: 1000,          // 🔥 live updates
+    refetchOnWindowFocus: true,     // 🔥 refetch when tab refocuses
+    staleTime: 0,
   });
 
   const { data: transactions } = useQuery({
     queryKey: ["transactions", 0, 10],
     queryFn: () => api.getTransactions(0, 10),
+    refetchInterval: 1000,          // 🔥 live updates
+    refetchOnWindowFocus: true,     // 🔥 refetch when tab refocuses
+    staleTime: 0,
   });
 
   const { data: health } = useQuery({
     queryKey: ["health"],
     queryFn: api.getHealth,
+    refetchInterval: 1000,          // 🔥 live updates
+    refetchOnWindowFocus: true,     // 🔥 refetch when tab refocuses
+    staleTime: 0,
   });
 
   if (statsLoading) {
@@ -260,9 +269,8 @@ function ConnectionRow({
     <div className="flex items-center justify-between">
       <div className="flex items-center gap-2">
         <div
-          className={`w-2 h-2 rounded-full ${
-            connected ? "bg-accent-green" : "bg-accent-red"
-          }`}
+          className={`w-2 h-2 rounded-full ${connected ? "bg-accent-green" : "bg-accent-red"
+            }`}
         />
         <span className="text-text-secondary text-sm">{label}</span>
       </div>

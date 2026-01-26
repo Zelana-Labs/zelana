@@ -11,6 +11,9 @@ export default function Batches() {
   const { data, isLoading } = useQuery({
     queryKey: ["batches", page, limit],
     queryFn: () => api.getBatches(page * limit, limit),
+      refetchInterval: 1000,          // 🔥 live updates
+  refetchOnWindowFocus: true,     // 🔥 refetch when tab refocuses
+  staleTime: 0,   
   });
 
   return (

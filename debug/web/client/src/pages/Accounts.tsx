@@ -12,6 +12,9 @@ export default function Accounts() {
   const { data, isLoading } = useQuery({
     queryKey: ["accounts", page, limit],
     queryFn: () => api.getAccounts(page * limit, limit),
+    refetchInterval: 1000,          // 🔥 live updates
+    refetchOnWindowFocus: true,     // 🔥 refetch when tab refocuses
+    staleTime: 0,
   });
 
   const filteredItems = data?.items.filter(

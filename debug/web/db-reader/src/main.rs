@@ -9,8 +9,9 @@ use rocksdb::{ColumnFamilyDescriptor, DB, IteratorMode, Options};
 use serde::{Deserialize, Serialize};
 use std::io::{BufRead, BufReader, Write};
 use std::net::TcpListener;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::Duration;
 use zelana_account::AccountState;
 use zelana_block::BlockHeader;
 use zelana_privacy::EncryptedNote;
@@ -128,26 +129,22 @@ impl DbReader {
         ];
 
         // Helper to create descriptors (since they don't implement Clone)
-        let make_descriptors = || {
+        let descriptors = || {
             cf_names
                 .iter()
                 .map(|name| ColumnFamilyDescriptor::new(*name, Options::default()))
                 .collect::<Vec<_>>()
         };
 
+        let secondary_path = PathBuf::from(format!("{}_secondary", path.as_ref().display()));
         // Try read-only first, then secondary
-        let db = DB::open_cf_descriptors_read_only(&opts, path.as_ref(), make_descriptors(), false)
-            .or_else(|_| {
-                let secondary_path = path.as_ref().with_file_name(format!(
-                    "{}_secondary",
-                    path.as_ref()
-                        .file_name()
-                        .unwrap_or_default()
-                        .to_string_lossy()
-                ));
-                DB::open_cf_as_secondary(&opts, path.as_ref(), &secondary_path, cf_names.to_vec())
-            })
-            .context("Failed to open RocksDB")?;
+        let db = DB::open_cf_descriptors_as_secondary(
+            &opts,
+            path.as_ref(),
+            &secondary_path,
+            descriptors(),
+        )
+        .context("Failed to open RocksDB")?;
 
         Ok(Self { db: Arc::new(db) })
     }
@@ -736,6 +733,17 @@ impl DbReader {
         }
         None
     }
+
+    fn start_catchup_loop(db: Arc<DB>) {
+        std::thread::spawn(move || {
+            loop {
+                if let Err(e) = db.try_catch_up_with_primary() {
+                    eprintln!("RocksDB catchup filead: {}", e)
+                }
+                std::thread::sleep(Duration::from_millis(500));
+            }
+        });
+    }
 }
 
 fn main() -> Result<()> {
@@ -748,6 +756,7 @@ fn main() -> Result<()> {
 
     println!("Opening database at: {}", db_path);
     let reader = DbReader::open(&db_path)?;
+    DbReader::start_catchup_loop(Arc::clone(&reader.db));
     println!("Database opened successfully");
 
     let listener = TcpListener::bind(format!("127.0.0.1:{}", port))?;

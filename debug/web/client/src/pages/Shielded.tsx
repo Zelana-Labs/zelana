@@ -65,11 +65,10 @@ function TabButton({
   return (
     <button
       onClick={onClick}
-      className={`flex items-center gap-2 px-4 py-2.5 text-sm border-b-2 transition-colors ${
-        active
+      className={`flex items-center gap-2 px-4 py-2.5 text-sm border-b-2 transition-colors ${active
           ? "border-accent-purple text-accent-purple"
           : "border-transparent text-text-secondary hover:text-text-primary"
-      }`}
+        }`}
     >
       <Icon size={16} />
       {label}
@@ -84,6 +83,10 @@ function NullifiersTab() {
   const { data, isLoading } = useQuery({
     queryKey: ["nullifiers", page, limit],
     queryFn: () => api.getNullifiers(page * limit, limit),
+
+    refetchInterval: 1000,          // 🔥 live updates
+    refetchOnWindowFocus: true,     // 🔥 refetch when tab refocuses
+    staleTime: 0,
   });
 
   return (
@@ -132,6 +135,9 @@ function CommitmentsTab() {
   const { data, isLoading } = useQuery({
     queryKey: ["commitments", page, limit],
     queryFn: () => api.getCommitments(page * limit, limit),
+    refetchInterval: 1000,          // 🔥 live updates
+    refetchOnWindowFocus: true,     // 🔥 refetch when tab refocuses
+    staleTime: 0,
   });
 
   return (
@@ -192,6 +198,9 @@ function EncryptedNotesTab() {
   const { data, isLoading } = useQuery({
     queryKey: ["encrypted_notes", page, limit],
     queryFn: () => api.getEncryptedNotes(page * limit, limit),
+    refetchInterval: 1000,          // 🔥 live updates
+    refetchOnWindowFocus: true,     // 🔥 refetch when tab refocuses
+    staleTime: 0,
   });
 
   return (
@@ -247,6 +256,10 @@ function TreeMetaTab() {
   const { data, isLoading } = useQuery({
     queryKey: ["tree_meta"],
     queryFn: api.getTreeMeta,
+
+    refetchInterval: 1000,          // 🔥 live updates
+    refetchOnWindowFocus: true,     // 🔥 refetch when tab refocuses
+    staleTime: 0,
   });
 
   if (isLoading) {
