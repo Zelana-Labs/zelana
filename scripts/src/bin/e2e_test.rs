@@ -23,9 +23,7 @@
 //!   4. VK stored: cargo run --bin store_vk
 //!   5. Sequencer running: cargo run --package core
 
-mod config;
-
-use config::*;
+use zelana_scripts::config::*;
 use solana_client::rpc_client::RpcClient;
 use solana_commitment_config::CommitmentConfig;
 use solana_sdk::{
@@ -35,6 +33,7 @@ use solana_sdk::{
     system_program,
     transaction::Transaction,
 };
+use zelana_config::{API, SOLANA};
 use std::str::FromStr;
 use std::time::Duration;
 use tokio::time::sleep;
@@ -85,8 +84,7 @@ async fn main() -> anyhow::Result<()> {
 
     // Load configuration
     let payer_path = std::env::var("PAYER_KEYPAIR").unwrap_or_else(|_| default_payer_path());
-    let sequencer_url =
-        std::env::var("SEQUENCER_URL").unwrap_or_else(|_| SEQUENCER_URL.to_string());
+    let sequencer_url = format!("http://{}", API.sequencer_url);
 
     let payer = load_keypair(&payer_path)?;
     let _recipient = recipient_str
@@ -94,14 +92,14 @@ async fn main() -> anyhow::Result<()> {
         .unwrap_or_else(|| payer.pubkey()); // Reserved for future transfer testing
 
     println!("Configuration:");
-    println!("  Bridge Program: {}", BRIDGE_PROGRAM_ID);
-    println!("  Verifier Program: {}", VERIFIER_PROGRAM_ID);
-    println!("  RPC URL: {}", RPC_URL);
+    println!("  Bridge Program: {}", SOLANA.bridge_program);
+    println!("  Verifier Program: {}", SOLANA.verifier_program);
+    println!("  RPC URL: {}", SOLANA.rpc_url);
     println!("  Sequencer URL: {}", sequencer_url);
     println!("  Payer: {}", payer.pubkey());
 
     let http_client = reqwest::Client::new();
-    let rpc = RpcClient::new_with_commitment(RPC_URL.to_string(), CommitmentConfig::confirmed());
+    let rpc = RpcClient::new_with_commitment(SOLANA.rpc_url, CommitmentConfig::confirmed());
 
     // ========================================
     // Step 1: Check Sequencer

@@ -1,0 +1,13 @@
+[package]
+name = "zelana-config"
+version = "0.1.0"
+edition = "2021"
+description = "Shared configuration for Zelana"
+
+[dependencies]
+anyhow = {workspace = true}
+dirs = "5.0"
+log = "0.4"
+serde = {workspace = true}
+solana-sdk = "2.2"
+toml = "0.8"

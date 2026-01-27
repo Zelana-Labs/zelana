@@ -13,11 +13,10 @@
 //!   PAYER_KEYPAIR  - Path to keypair (default: ~/.config/solana/id.json)
 //!   SEQUENCER_URL  - Sequencer API URL (default: http://127.0.0.1:8080)
 
-mod config;
-
-use config::*;
 use solana_sdk::{pubkey::Pubkey, signature::Signer};
 use std::str::FromStr;
+use zelana_config::API;
+use zelana_scripts::config::*;
 
 #[derive(serde::Deserialize, Debug)]
 struct AccountState {
@@ -52,8 +51,7 @@ async fn main() -> anyhow::Result<()> {
         .and_then(|i| args.get(i + 1))
         .map(|s| s.as_str());
 
-    let sequencer_url =
-        std::env::var("SEQUENCER_URL").unwrap_or_else(|_| SEQUENCER_URL.to_string());
+    let sequencer_url = API.sequencer_url;
 
     print_info(&format!("Sequencer URL: {}", sequencer_url));
 
@@ -74,7 +72,7 @@ async fn main() -> anyhow::Result<()> {
     // Check sequencer status
     print_waiting("Checking sequencer status...");
 
-    match client.get(format!("{}/status", sequencer_url)).send().await {
+    match client.get(format!("{}/health", sequencer_url)).send().await {
         Ok(resp) => {
             if resp.status().is_success() {
                 if let Ok(status) = resp.json::<SequencerStatus>().await {

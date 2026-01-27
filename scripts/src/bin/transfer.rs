@@ -16,9 +16,7 @@
 //!   PAYER_KEYPAIR  - Path to keypair (default: ~/.config/solana/id.json)
 //!   SEQUENCER_URL  - Sequencer API URL (default: http://127.0.0.1:8080)
 
-mod config;
-
-use config::*;
+use zelana_scripts::config::*;
 use solana_sdk::{pubkey::Pubkey, signature::Signer};
 use std::str::FromStr;
 
@@ -96,14 +94,14 @@ async fn main() -> anyhow::Result<()> {
 
     // Load configuration
     let payer_path = std::env::var("PAYER_KEYPAIR").unwrap_or_else(|_| default_payer_path());
-    let sequencer_url =
-        std::env::var("SEQUENCER_URL").unwrap_or_else(|_| SEQUENCER_URL.to_string());
+    let sequencer_url = sequencer_url();
 
     print_info(&format!("Sequencer URL: {}", sequencer_url));
     print_info(&format!(
         "Amount: {} lamports ({} SOL)",
         amount_lamports,
         amount_lamports as f64 / 1_000_000_000.0
+
     ));
 
     // Load keypair

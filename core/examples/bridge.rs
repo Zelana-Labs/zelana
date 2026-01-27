@@ -6,18 +6,18 @@ use solana_sdk::{
     signature::{Keypair, Signer},
     transaction::Transaction,
 };
-use std::env;
 use std::str::FromStr;
 use zelana_transaction::{DepositParams, InitParams};
+use zelana_config::ZelanaConfig;
 
 const DOMAIN: &[u8] = b"solana";
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let rpc_url = "http://127.0.0.1:8899";
-    let bridge_id_str = env::var("BRIDGE_PROGRAM_ID")
-        .unwrap_or_else(|_| "9HXapBN9otLGnQNGv1HRk91DGqMNvMAvQqohL7gPW1sd".to_string());
-    let program_id = Pubkey::from_str(&bridge_id_str)?;
+    let config = ZelanaConfig::global();
+
+    let rpc_url = &config.solana.rpc_url;
+    let program_id = Pubkey::from_str(&config.solana.bridge_program_id)?;
 
     let payer = Keypair::new();
     let sequencer = Keypair::new();
@@ -71,7 +71,7 @@ async fn main() -> anyhow::Result<()> {
     }
 
     // Deposit
-    let nonce: u64 = 101;
+    let nonce: u64 = 619;
     let (receipt_pda, _) = Pubkey::find_program_address(
         &[
             b"receipt",

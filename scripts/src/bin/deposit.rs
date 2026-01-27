@@ -14,9 +14,7 @@
 //! Environment variables:
 //!   PAYER_KEYPAIR - Path to keypair (default: ~/.config/solana/id.json)
 
-mod config;
-
-use config::*;
+use zelana_scripts::config::*;
 use solana_client::rpc_client::RpcClient;
 use solana_commitment_config::CommitmentConfig;
 use solana_sdk::{
@@ -25,6 +23,8 @@ use solana_sdk::{
     system_program,
     transaction::Transaction,
 };
+use zelana_config::{SOLANA};
+
 
 /// Bridge instruction discriminator for Deposit
 const BRIDGE_IX_DEPOSIT: u8 = 1;
@@ -75,8 +75,8 @@ async fn main() -> anyhow::Result<()> {
     // Load configuration
     let payer_path = std::env::var("PAYER_KEYPAIR").unwrap_or_else(|_| default_payer_path());
 
-    print_info(&format!("Bridge Program ID: {}", BRIDGE_PROGRAM_ID));
-    print_info(&format!("RPC URL: {}", RPC_URL));
+    print_info(&format!("Bridge Program ID: {}", SOLANA.bridge_program));
+    print_info(&format!("RPC URL: {}", SOLANA.rpc_url));
     print_info(&format!(
         "Amount: {} SOL ({} lamports)",
         amount_sol, amount_lamports
@@ -88,7 +88,7 @@ async fn main() -> anyhow::Result<()> {
     println!("\nDepositor: {}", payer.pubkey());
 
     // Connect to RPC
-    let rpc = RpcClient::new_with_commitment(RPC_URL.to_string(), CommitmentConfig::confirmed());
+    let rpc = RpcClient::new_with_commitment(SOLANA.rpc_url, CommitmentConfig::confirmed());
 
     // Check balance
     let balance = rpc.get_balance(&payer.pubkey())?;

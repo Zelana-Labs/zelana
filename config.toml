@@ -1,0 +1,28 @@
+# Zelana Configuration
+# Loaded from: ./config.toml, ~/.zelana/config.toml, or ZL_CONFIG env
+
+[api]
+host = "http://127.0.0.1"
+port = 8080
+
+[database]
+path = "./zelana-db"
+
+[solana]
+rpc_url = "http://127.0.0.1:8899"
+ws_url = "ws://127.0.0.1:8900/"
+bridge_program_id = "9HXapBN9otLGnQNGv1HRk91DGqMNvMAvQqohL7gPW1sd"
+verifier_program_id = "7rsVijhQ1ipfc6uxzcs4R2gBtD9L5ZLubSc6vPKXgawo"
+domain = "solana"
+
+[pipeline]
+prover_mode = "mock"
+settlement_enabled = false
+
+[batch]
+max_transactions = 100
+max_batch_age_secs = 60
+max_shielded = 10
+
+[features]
+dev_mode = true

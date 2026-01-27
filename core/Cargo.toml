@@ -38,6 +38,7 @@ zelana-privacy = { workspace = true }
 zelana-threshold = { workspace = true }
 prover = { workspace = true }
 txblob = { workspace = true }
+zelana-config = {workspace = true}
 
 # Arkworks for ZK proving
 ark-bn254 = "0.5.0"

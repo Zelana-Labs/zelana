@@ -4,32 +4,9 @@ version = "0.1.0"
 edition = "2021"
 description = "Manual testing scripts for Zelana L2"
 
-[[bin]]
-name = "init_bridge"
-path = "src/init_bridge.rs"
-
-[[bin]]
-name = "store_vk"
-path = "src/store_vk.rs"
-
-[[bin]]
-name = "deposit"
-path = "src/deposit.rs"
-
-[[bin]]
-name = "transfer"
-path = "src/transfer.rs"
-
-[[bin]]
-name = "check_balance"
-path = "src/check_balance.rs"
-
-[[bin]]
-name = "e2e_test"
-path = "src/e2e_test.rs"
-
 [dependencies]
 anyhow = "1.0"
+dirs = "5.0"
 tokio = { version = "1.40", features = ["full"] }
 solana-sdk = "2.2"
 solana-client = "2.2"
@@ -42,6 +19,7 @@ serde_json = "1.0"
 reqwest = { version = "0.12", features = ["json"] }
 
 # Local dependencies
-zelana-keypair = { path = "../sdk/keypair" }
-zelana-account = { path = "../sdk/account" }
-zelana-transaction = { path = "../sdk/transaction" }
+zelana-keypair = { workspace = true }
+zelana-account = { workspace = true }
+zelana-transaction = { workspace = true }
+zelana-config = { workspace = true }

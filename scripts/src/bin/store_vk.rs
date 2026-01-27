@@ -16,9 +16,7 @@
 //!   PAYER_KEYPAIR - Path to payer keypair (default: ~/.config/solana/id.json)
 //!   VK_FILE       - Path to VK JSON file (optional, uses mock data if not provided)
 
-mod config;
-
-use config::*;
+use zelana_scripts::config::*;
 use solana_client::rpc_client::RpcClient;
 use solana_commitment_config::CommitmentConfig;
 use solana_sdk::{
@@ -27,6 +25,7 @@ use solana_sdk::{
     system_program,
     transaction::Transaction,
 };
+use zelana_config::SOLANA;
 
 /// Anchor discriminator for init_batch_vk instruction
 /// = sha256("global:init_batch_vk")[0..8]
@@ -121,8 +120,8 @@ async fn main() -> anyhow::Result<()> {
     // Load configuration
     let payer_path = std::env::var("PAYER_KEYPAIR").unwrap_or_else(|_| default_payer_path());
 
-    print_info(&format!("Verifier Program ID: {}", VERIFIER_PROGRAM_ID));
-    print_info(&format!("RPC URL: {}", RPC_URL));
+    print_info(&format!("Verifier Program ID: {}", SOLANA.verifier_program));
+    print_info(&format!("RPC URL: {}", SOLANA.rpc_url));
     print_info(&format!("Payer keypair: {}", payer_path));
 
     // Load VK data
@@ -144,7 +143,7 @@ async fn main() -> anyhow::Result<()> {
     println!("\nPayer: {}", payer.pubkey());
 
     // Connect to RPC
-    let rpc = RpcClient::new_with_commitment(RPC_URL.to_string(), CommitmentConfig::confirmed());
+    let rpc = RpcClient::new_with_commitment(SOLANA.rpc_url, CommitmentConfig::confirmed());
 
     // Check payer balance
     let balance = rpc.get_balance(&payer.pubkey())?;

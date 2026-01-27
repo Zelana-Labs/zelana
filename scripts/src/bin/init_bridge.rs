@@ -10,9 +10,7 @@
 //!   SEQUENCER_KEYPAIR - Path to sequencer keypair (default: ~/.config/solana/id.json)
 //!   PAYER_KEYPAIR     - Path to payer keypair (default: ~/.config/solana/id.json)
 
-mod config;
-
-use config::*;
+use zelana_scripts::config::*;
 use solana_client::rpc_client::RpcClient;
 use solana_commitment_config::CommitmentConfig;
 use solana_sdk::{
@@ -21,6 +19,7 @@ use solana_sdk::{
     system_program,
     transaction::Transaction,
 };
+use zelana_config::SOLANA;
 
 /// Bridge instruction discriminator for Init
 const BRIDGE_IX_INIT: u8 = 0;
@@ -42,9 +41,9 @@ async fn main() -> anyhow::Result<()> {
     let sequencer_path =
         std::env::var("SEQUENCER_KEYPAIR").unwrap_or_else(|_| default_payer_path());
 
-    print_info(&format!("Bridge Program ID: {}", BRIDGE_PROGRAM_ID));
-    print_info(&format!("Verifier Program ID: {}", VERIFIER_PROGRAM_ID));
-    print_info(&format!("RPC URL: {}", RPC_URL));
+    print_info(&format!("Bridge Program ID: {}", SOLANA.bridge_program));
+    print_info(&format!("Verifier Program ID: {}", SOLANA.verifier_program));
+    print_info(&format!("RPC URL: {}", SOLANA.rpc_url));
     print_info(&format!("Payer keypair: {}", payer_path));
     print_info(&format!("Sequencer keypair: {}", sequencer_path));
 
@@ -56,7 +55,7 @@ async fn main() -> anyhow::Result<()> {
     println!("Sequencer Authority: {}", sequencer.pubkey());
 
     // Connect to RPC
-    let rpc = RpcClient::new_with_commitment(RPC_URL.to_string(), CommitmentConfig::confirmed());
+    let rpc = RpcClient::new_with_commitment(SOLANA.rpc_url, CommitmentConfig::confirmed());
 
     // Check payer balance
     let balance = rpc.get_balance(&payer.pubkey())?;

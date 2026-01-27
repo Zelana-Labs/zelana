@@ -3,31 +3,36 @@
 //! Contains program IDs, RPC URLs, and helper functions used across all test scripts.
 
 use solana_sdk::pubkey::Pubkey;
-use std::str::FromStr;
+use std::{str::FromStr, sync::OnceLock};
+use zelana_config::{ZelanaConfig};
 
-/// Bridge program ID (freshly generated)
-pub const BRIDGE_PROGRAM_ID: &str = "8SE6gCijcFQixvDQqWu29mCm9AydN8hcwWh2e2Q6RQgE";
-
-/// Verifier program ID (freshly generated)
-pub const VERIFIER_PROGRAM_ID: &str = "8TveT3mvH59qLzZNwrTT6hBqDHEobW2XnCPb7xZLBYHd";
+static CONFIG: OnceLock<ZelanaConfig> = OnceLock::new();
 
 /// Solana RPC URL (Surfpool default)
-pub const RPC_URL: &str = "http://127.0.0.1:8899";
+pub fn rpc_url() -> &'static str {
+    &get_config().solana.rpc_url
+}
 
 /// Sequencer HTTP API URL
-pub const SEQUENCER_URL: &str = "http://127.0.0.1:8080";
+pub fn sequencer_url() -> &'static str {
+    &get_config().api.sequencer
+}
 
 /// Default domain for the L2 (padded to 32 bytes)
 pub const DOMAIN: &[u8] = b"zelana";
 
+pub fn get_config() -> &'static ZelanaConfig {
+    CONFIG.get_or_init(|| ZelanaConfig::load().expect("Failed to load ZelanaConfig"))
+}
+
 /// Get the bridge program ID as Pubkey
 pub fn bridge_program_id() -> Pubkey {
-    Pubkey::from_str(BRIDGE_PROGRAM_ID).expect("Invalid bridge program ID")
+    Pubkey::from_str(&get_config().solana.bridge_program_id).expect("Invalid bridge program ID")
 }
 
 /// Get the verifier program ID as Pubkey
 pub fn verifier_program_id() -> Pubkey {
-    Pubkey::from_str(VERIFIER_PROGRAM_ID).expect("Invalid verifier program ID")
+    Pubkey::from_str(&get_config().solana.verifier_program_id).expect("Invalid verifier program ID")
 }
 
 /// Get the domain as a 32-byte array

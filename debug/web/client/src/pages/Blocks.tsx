@@ -11,9 +11,9 @@ export default function Blocks() {
   const { data, isLoading } = useQuery({
     queryKey: ["blocks", page, limit],
     queryFn: () => api.getBlocks(page * limit, limit),
-      refetchInterval: 1000,          // 🔥 live updates
-  refetchOnWindowFocus: true,     // 🔥 refetch when tab refocuses
-  staleTime: 0,   
+    refetchInterval: 1000,          // 🔥 live updates
+    refetchOnWindowFocus: true,     // 🔥 refetch when tab refocuses
+    staleTime: 0,
   });
 
   return (
@@ -132,8 +132,8 @@ function HashCell({
     color === "green"
       ? "text-accent-green"
       : color === "purple"
-      ? "text-accent-purple"
-      : "text-text-secondary";
+        ? "text-accent-purple"
+        : "text-text-secondary";
 
   return (
     <div className="flex items-center gap-1">

@@ -36,7 +36,7 @@ use tokio::sync::Mutex;
 
 use crate::api::handlers::ApiState;
 use crate::api::routes::create_router;
-use crate::config::ZelanaConfig;
+use crate::config::{ZelanaConfig, ZelanaConfigExt};
 use crate::sequencer::{
     IndexerConfig, PipelineService, RocksDbStore, ShieldedState, WithdrawalQueue,
     start_indexer_with_pipeline,

@@ -1,7 +1,7 @@
 [workspace]
 members = [
     "cli",
-    "core", 
+    "core",
     "debug/db",
     "debug/web/db-reader",
     "prover",
@@ -24,16 +24,17 @@ edition = "2024"
 [workspace.dependencies]
 # --- internal SDK crates ---
 zelana-transaction = { path = "sdk/transaction" }
-zelana-signature   = { path = "sdk/signature" }
-zelana-account     = { path = "sdk/account" }
-zelana-pubkey      = { path = "sdk/pubkey" }
-zelana-block       = { path = "sdk/block" }
-zelana-keypair     = { path = "sdk/keypair" }
-zelana-privacy     = { path = "sdk/privacy" }
-zelana-threshold   = { path = "sdk/threshold" }
-zephyr             = { path = "sdk/zephyr" }
+zelana-signature = { path = "sdk/signature" }
+zelana-account = { path = "sdk/account" }
+zelana-pubkey = { path = "sdk/pubkey" }
+zelana-block = { path = "sdk/block" }
+zelana-keypair = { path = "sdk/keypair" }
+zelana-privacy = { path = "sdk/privacy" }
+zelana-threshold = { path = "sdk/threshold" }
+zephyr = { path = "sdk/zephyr" }
 txblob = { path = "sdk/txblob" }
-prover             = { path = "prover" }
+prover = { path = "prover" }
+zelana-config = { path = "config" }
 
 # --- external deps ---
 rocksdb = "0.24.0"
