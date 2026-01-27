@@ -10911,6 +10911,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "zelana-config"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "dirs",
+ "log",
+ "serde",
+ "solana-sdk 2.3.1",
+ "toml 0.8.23",
+]
+
+[[package]]
 name = "zelana-core"
 version = "0.1.0"
 dependencies = [
@@ -10959,6 +10971,7 @@ dependencies = [
  "x25519-dalek",
  "zelana-account",
  "zelana-block",
+ "zelana-config",
  "zelana-keypair",
  "zelana-privacy",
  "zelana-threshold",
@@ -11022,6 +11035,7 @@ dependencies = [
  "anyhow",
  "borsh 1.6.0",
  "bs58",
+ "dirs",
  "hex",
  "reqwest",
  "serde",
@@ -11031,6 +11045,7 @@ dependencies = [
  "solana-sdk 2.3.1",
  "tokio",
  "zelana-account",
+ "zelana-config",
  "zelana-keypair",
  "zelana-transaction",
 ]
