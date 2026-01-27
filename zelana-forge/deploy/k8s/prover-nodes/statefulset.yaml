@@ -1,0 +1,70 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: prover-node
+  labels:
+    app: prover-node
+spec:
+  serviceName: prover-node
+  replicas: 5
+  selector:
+    matchLabels:
+      app: prover-node
+  template:
+    metadata:
+      labels:
+        app: prover-node
+    spec:
+      containers:
+      - name: prover-node
+        image: zelana/prover-node:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 3000
+          name: http
+          protocol: TCP
+        env:
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: NODE_ID
+          # Extract ordinal from pod name (prover-node-0 -> 1, prover-node-1 -> 2, etc.)
+          value: "$(echo $POD_NAME | sed 's/prover-node-//' | awk '{print $1+1}')"
+        - name: PORT
+          value: "3000"
+        - name: HOST
+          value: "0.0.0.0"
+        - name: RUST_LOG
+          value: "prover_node=info"
+        command:
+        - /bin/sh
+        - -c
+        - |
+          # Extract ordinal from pod name and add 1 for NODE_ID
+          export NODE_ID=$(echo $HOSTNAME | sed 's/prover-node-//' | awk '{print $1+1}')
+          echo "Starting node with NODE_ID=$NODE_ID"
+          /usr/local/bin/prover-node --node-id=$NODE_ID --port=3000 --host=0.0.0.0
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 3000
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 3
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 3000
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"

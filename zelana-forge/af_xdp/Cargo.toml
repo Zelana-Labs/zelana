@@ -1,0 +1,16 @@
+[package]
+name = "af_xdp"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+aya-ebpf ={ workspace = true}
+
+[profile.release]
+panic = "abort"
+
+[profile.dev]
+panic = "abort"
+
+[lib]
+crate-type = ["cdylib"]

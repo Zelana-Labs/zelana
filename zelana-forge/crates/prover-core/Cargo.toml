@@ -1,0 +1,21 @@
+[package]
+name = "prover-core"
+description = "Core cryptographic primitives for distributed ZK proving"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+ark-bn254.workspace = true
+ark-ec.workspace = true
+ark-ff.workspace = true
+ark-std.workspace = true
+ark-serialize.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+subtle.workspace = true
+hex.workspace = true
+
+[dev-dependencies]
+ark-std.workspace = true
+rand.workspace = true

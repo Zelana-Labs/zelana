@@ -20,3 +20,5 @@ coverage/
 # Misc
 *.log
 *.tsbuildinfo
+
+*.tgz

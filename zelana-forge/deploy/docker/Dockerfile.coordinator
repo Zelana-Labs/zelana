@@ -1,0 +1,75 @@
+# Zelana Forge - Prover Coordinator
+# Multi-stage build for minimal image size
+
+# Stage 1: Build
+FROM rust:1.75-bookworm AS builder
+
+WORKDIR /app
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y \
+    pkg-config \
+    libssl-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy workspace configuration
+COPY Cargo.toml Cargo.lock ./
+COPY crates/prover-coordinator/Cargo.toml crates/prover-coordinator/
+COPY crates/prover-network/Cargo.toml crates/prover-network/
+COPY crates/prover-core/Cargo.toml crates/prover-core/
+COPY crates/prover-worker/Cargo.toml crates/prover-worker/
+COPY crates/prover-node/Cargo.toml crates/prover-node/
+COPY crates/prover-control/Cargo.toml crates/prover-control/
+
+# Create dummy source files for dependency caching
+RUN mkdir -p crates/prover-coordinator/src && echo "fn main() {}" > crates/prover-coordinator/src/main.rs
+RUN mkdir -p crates/prover-network/src && echo "" > crates/prover-network/src/lib.rs
+RUN mkdir -p crates/prover-core/src && echo "" > crates/prover-core/src/lib.rs
+RUN mkdir -p crates/prover-worker/src && echo "fn main() {}" > crates/prover-worker/src/main.rs
+RUN mkdir -p crates/prover-node/src && echo "fn main() {}" > crates/prover-node/src/main.rs
+RUN mkdir -p crates/prover-control/src && echo "" > crates/prover-control/src/lib.rs
+
+# Build dependencies (this layer is cached)
+RUN cargo build --release -p prover-coordinator 2>/dev/null || true
+
+# Copy actual source code
+COPY crates/prover-coordinator/src crates/prover-coordinator/src
+COPY crates/prover-network/src crates/prover-network/src
+COPY crates/prover-core/src crates/prover-core/src
+
+# Touch to invalidate cache and rebuild
+RUN touch crates/prover-coordinator/src/main.rs
+
+# Build the coordinator
+RUN cargo build --release -p prover-coordinator
+
+# Stage 2: Runtime
+FROM debian:bookworm-slim
+
+WORKDIR /app
+
+# Install runtime dependencies
+RUN apt-get update && apt-get install -y \
+    ca-certificates \
+    libssl3 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy the binary
+COPY --from=builder /app/target/release/prover-coordinator /app/prover-coordinator
+
+# Create non-root user
+RUN useradd -r -s /bin/false zelana
+USER zelana
+
+# Environment variables (can be overridden)
+ENV HOST=0.0.0.0
+ENV PORT=8080
+ENV RUST_LOG=prover_coordinator=info
+
+EXPOSE 8080
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:${PORT}/health || exit 1
+
+ENTRYPOINT ["/app/prover-coordinator"]

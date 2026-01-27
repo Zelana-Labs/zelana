@@ -1,0 +1,141 @@
+# deploy/docker/docker-compose.yml
+services:
+  coordinator:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile.coordinator
+    ports:
+      - "8080:8080"
+    environment:
+      - RUST_LOG=prover_coordinator=info
+      - THRESHOLD=3
+      - NODES=http://node1:8080,http://node2:8080,http://node3:8080,http://node4:8080,http://node5:8080
+      - PORT=8080
+    depends_on:
+      node1:
+        condition: service_healthy
+      node2:
+        condition: service_healthy
+      node3:
+        condition: service_healthy
+      node4:
+        condition: service_healthy
+      node5:
+        condition: service_healthy
+    networks:
+      - prover-network
+
+  node1:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile.node
+    ports:
+      - "3001:8080"
+    security_opt:
+      - seccomp=unconfined
+      - label=disable
+    environment:
+      - RUST_LOG=prover_node=info
+      - NODE_ID=1
+      - PORT=8080
+    networks:
+      - prover-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  node2:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile.node
+    ports:
+      - "3002:8080"
+    security_opt:
+      - seccomp=unconfined
+      - label=disable
+    environment:
+      - RUST_LOG=prover_node=info
+      - NODE_ID=2
+      - PORT=8080
+    networks:
+      - prover-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  node3:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile.node
+    ports:
+      - "3003:8080"
+    security_opt:
+      - seccomp=unconfined
+    environment:
+      - RUST_LOG=prover_node=info
+      - NODE_ID=3
+      - PORT=8080
+    networks:
+      - prover-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  node4:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile.node
+    ports:
+      - "3004:8080"
+    security_opt:
+    - seccomp=unconfined
+    - label=disable
+    environment:
+      - RUST_LOG=prover_node=info
+      - NODE_ID=4
+      - PORT=8080
+    networks:
+      - prover-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  node5:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile.node
+    ports:
+      - "3005:8080"
+    security_opt:
+    - seccomp=unconfined
+    - label=disable
+    environment:
+      - RUST_LOG=prover_node=info
+      - NODE_ID=5
+      - PORT=8080
+    networks:
+      - prover-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+
+
+networks:
+  prover-network:
+    driver: bridge

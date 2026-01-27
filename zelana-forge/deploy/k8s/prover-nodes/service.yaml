@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: prover-node
+  labels:
+    app: prover-node
+spec:
+  clusterIP: None  # Headless service for StatefulSet
+  selector:
+    app: prover-node
+  ports:
+  - port: 3000
+    targetPort: 3000
+    protocol: TCP
+    name: http

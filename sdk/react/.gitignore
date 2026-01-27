@@ -17,3 +17,5 @@ bun.lockb
 # Misc
 *.log
 *.tsbuildinfo
+
+*.tgz

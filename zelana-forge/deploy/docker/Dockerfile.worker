@@ -1,0 +1,83 @@
+# Zelana Forge - Prover Worker
+# Multi-stage build for minimal image size
+
+# Stage 1: Build
+FROM rust:1.75-bookworm AS builder
+
+WORKDIR /app
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y \
+    pkg-config \
+    libssl-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy workspace configuration
+COPY Cargo.toml Cargo.lock ./
+COPY crates/prover-worker/Cargo.toml crates/prover-worker/
+COPY crates/prover-network/Cargo.toml crates/prover-network/
+COPY crates/prover-core/Cargo.toml crates/prover-core/
+COPY crates/prover-coordinator/Cargo.toml crates/prover-coordinator/
+COPY crates/prover-node/Cargo.toml crates/prover-node/
+COPY crates/prover-control/Cargo.toml crates/prover-control/
+
+# Create dummy source files for dependency caching
+RUN mkdir -p crates/prover-worker/src && echo "fn main() {}" > crates/prover-worker/src/main.rs
+RUN mkdir -p crates/prover-network/src && echo "" > crates/prover-network/src/lib.rs
+RUN mkdir -p crates/prover-core/src && echo "" > crates/prover-core/src/lib.rs
+RUN mkdir -p crates/prover-coordinator/src && echo "fn main() {}" > crates/prover-coordinator/src/main.rs
+RUN mkdir -p crates/prover-node/src && echo "fn main() {}" > crates/prover-node/src/main.rs
+RUN mkdir -p crates/prover-control/src && echo "" > crates/prover-control/src/lib.rs
+
+# Build dependencies (this layer is cached)
+RUN cargo build --release -p prover-worker 2>/dev/null || true
+
+# Copy actual source code
+COPY crates/prover-worker/src crates/prover-worker/src
+COPY crates/prover-network/src crates/prover-network/src
+COPY crates/prover-core/src crates/prover-core/src
+
+# Touch to invalidate cache and rebuild
+RUN touch crates/prover-worker/src/main.rs
+
+# Build the worker
+RUN cargo build --release -p prover-worker
+
+# Stage 2: Runtime
+FROM debian:bookworm-slim
+
+WORKDIR /app
+
+# Install runtime dependencies
+RUN apt-get update && apt-get install -y \
+    ca-certificates \
+    libssl3 \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy the binary
+COPY --from=builder /app/target/release/prover-worker /app/prover-worker
+
+# Create directories for circuits (mounted as volume)
+RUN mkdir -p /app/circuits
+
+# Create non-root user
+RUN useradd -r -s /bin/false zelana && chown -R zelana:zelana /app
+USER zelana
+
+# Environment variables (can be overridden)
+ENV HOST=0.0.0.0
+ENV PORT=3001
+ENV WORKER_ID=1
+ENV MAX_CONCURRENT_JOBS=2
+ENV MOCK_PROVER=true
+ENV MOCK_DELAY_MS=500
+ENV RUST_LOG=prover_worker=info
+
+EXPOSE 3001
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:${PORT}/health || exit 1
+
+ENTRYPOINT ["/app/prover-worker"]

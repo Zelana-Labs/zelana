@@ -1,0 +1,8 @@
+[package]
+name = "zelana_batch"
+type = "bin"
+authors = ["Zelana Team"]
+compiler_version = ">=0.30.0"
+
+[dependencies]
+zelana_lib = { path = "../zelana_lib" }

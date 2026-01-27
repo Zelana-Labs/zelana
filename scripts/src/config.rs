@@ -100,20 +100,20 @@ pub fn print_header(title: &str) {
 
 /// Print success message
 pub fn print_success(msg: &str) {
-    println!("✅ {}", msg);
+    println!("{}", msg);
 }
 
 /// Print error message
 pub fn print_error(msg: &str) {
-    println!("❌ {}", msg);
+    println!("{}", msg);
 }
 
 /// Print info message
 pub fn print_info(msg: &str) {
-    println!("ℹ️  {}", msg);
+    println!("{}", msg);
 }
 
 /// Print waiting message
 pub fn print_waiting(msg: &str) {
-    println!("⏳ {}", msg);
+    println!("{}", msg);
 }

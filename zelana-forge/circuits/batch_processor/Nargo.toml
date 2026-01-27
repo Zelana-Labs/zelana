@@ -1,0 +1,6 @@
+[package]
+name = "batch_processor"
+type = "bin"
+authors = [""]
+
+[dependencies]

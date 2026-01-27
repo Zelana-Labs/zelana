@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: zelana-prover
+  labels:
+    app: zelana-prover
+    environment: production

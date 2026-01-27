@@ -14,11 +14,12 @@
     }
   },
   "files": [
-    "dist",
-    "src"
+    "dist"
   ],
   "scripts": {
     "build": "bun build src/index.ts --outdir dist --target browser && tsc --emitDeclarationOnly --declaration --outDir dist",
+    "prepack": "npm run build",
+    "prepublishOnly": "npm run build",
     "test": "bun test",
     "typecheck": "tsc --noEmit"
   },

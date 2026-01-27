@@ -1,0 +1,18 @@
+[package]
+name = "prover-network"
+description = "Network message types and serialization for distributed proving"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+prover-core = { path = "../prover-core" }
+serde.workspace = true
+serde_json.workspace = true
+ark-serialize.workspace = true
+thiserror.workspace = true
+ark-ec.workspace = true
+hex.workspace = true
+
+[dev-dependencies]
+ark-std.workspace = true

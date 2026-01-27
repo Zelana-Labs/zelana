@@ -1,0 +1,14 @@
+# Dockerfile for prover-node
+FROM debian:bookworm-slim
+
+RUN apt-get update && apt-get install -y \
+    ca-certificates \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy pre-built binary from host
+COPY target/release/prover-node /usr/local/bin/prover-node
+
+EXPOSE 8080
+
+ENTRYPOINT ["/usr/local/bin/prover-node"]

@@ -1,0 +1,139 @@
+version: '3.8'
+
+# Zelana Forge - Parallel Swarm Architecture
+# 
+# This docker-compose runs:
+# - 1 Coordinator (Brain) on port 8080
+# - 4 Workers (Muscle) on ports 3001-3004
+#
+# Usage:
+#   docker-compose up -d
+#   docker-compose logs -f
+
+services:
+  coordinator:
+    build:
+      context: .
+      dockerfile: Dockerfile.coordinator
+    container_name: zelana-coordinator
+    ports:
+      - "8080:8080"
+    environment:
+      - PORT=8080
+      - HOST=0.0.0.0
+      - WORKERS=http://worker1:3001,http://worker2:3002,http://worker3:3003,http://worker4:3004
+      - CHUNK_SIZE=25
+      - PROOF_TIMEOUT_MS=300000
+      - MOCK_SETTLEMENT=true
+      - RUST_LOG=prover_coordinator=debug
+    depends_on:
+      - worker1
+      - worker2
+      - worker3
+      - worker4
+    networks:
+      - zelana-network
+    restart: unless-stopped
+
+  worker1:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    container_name: zelana-worker-1
+    ports:
+      - "3001:3001"
+    environment:
+      - WORKER_ID=1
+      - PORT=3001
+      - HOST=0.0.0.0
+      - MAX_CONCURRENT_JOBS=2
+      - MOCK_PROVER=true
+      - MOCK_DELAY_MS=500
+      - RUST_LOG=prover_worker=debug
+    volumes:
+      - ./circuits:/app/circuits:ro
+    networks:
+      - zelana-network
+    restart: unless-stopped
+
+  worker2:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    container_name: zelana-worker-2
+    ports:
+      - "3002:3002"
+    environment:
+      - WORKER_ID=2
+      - PORT=3002
+      - HOST=0.0.0.0
+      - MAX_CONCURRENT_JOBS=2
+      - MOCK_PROVER=true
+      - MOCK_DELAY_MS=600
+      - RUST_LOG=prover_worker=debug
+    volumes:
+      - ./circuits:/app/circuits:ro
+    networks:
+      - zelana-network
+    restart: unless-stopped
+
+  worker3:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    container_name: zelana-worker-3
+    ports:
+      - "3003:3003"
+    environment:
+      - WORKER_ID=3
+      - PORT=3003
+      - HOST=0.0.0.0
+      - MAX_CONCURRENT_JOBS=2
+      - MOCK_PROVER=true
+      - MOCK_DELAY_MS=450
+      - RUST_LOG=prover_worker=debug
+    volumes:
+      - ./circuits:/app/circuits:ro
+    networks:
+      - zelana-network
+    restart: unless-stopped
+
+  worker4:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    container_name: zelana-worker-4
+    ports:
+      - "3004:3004"
+    environment:
+      - WORKER_ID=4
+      - PORT=3004
+      - HOST=0.0.0.0
+      - MAX_CONCURRENT_JOBS=2
+      - MOCK_PROVER=true
+      - MOCK_DELAY_MS=550
+      - RUST_LOG=prover_worker=debug
+    volumes:
+      - ./circuits:/app/circuits:ro
+    networks:
+      - zelana-network
+    restart: unless-stopped
+
+  dashboard:
+    build:
+      context: ../../dashboard
+      dockerfile: Dockerfile
+    container_name: zelana-dashboard
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_COORDINATOR_URL=http://localhost:8080
+    depends_on:
+      - coordinator
+    networks:
+      - zelana-network
+    restart: unless-stopped
+
+networks:
+  zelana-network:
+    driver: bridge
