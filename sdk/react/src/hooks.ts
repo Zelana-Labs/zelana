@@ -18,9 +18,7 @@ import type {
   BatchStatusInfo,
 } from '@zelana/sdk';
 
-// ============================================================================
 // Types
-// ============================================================================
 
 export interface UseQueryResult<T> {
   data: T | null;
@@ -37,9 +35,7 @@ export interface UseMutationResult<TData, TVariables> {
   reset: () => void;
 }
 
-// ============================================================================
 // Core Hooks
-// ============================================================================
 
 /**
  * Hook to access the Zelana client
@@ -254,9 +250,7 @@ export function useStats(): UseQueryResult<GlobalStats> {
   return { data, isLoading, error, refetch: fetch };
 }
 
-// ============================================================================
 // Transaction Hooks
-// ============================================================================
 
 interface TransferVariables {
   to: string | Uint8Array;
@@ -344,9 +338,7 @@ export function useWithdraw(): UseMutationResult<WithdrawResponse, WithdrawVaria
   return { data, isLoading, error, mutate, reset };
 }
 
-// ============================================================================
 // Transaction Tracking Hooks
-// ============================================================================
 
 /**
  * Hook to get a transaction by hash
@@ -456,9 +448,7 @@ export function useWaitForTransaction(
   return { tx, isWaiting, error };
 }
 
-// ============================================================================
 // List Hooks
-// ============================================================================
 
 interface UseListOptions {
   limit?: number;
