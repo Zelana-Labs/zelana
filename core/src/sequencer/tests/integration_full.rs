@@ -992,6 +992,7 @@ async fn test_pipeline_shielded_transaction_end_to_end() {
         commitment,
         ciphertext: vec![0xCC; 64],
         ephemeral_key: [0xDD; 32],
+        nonce: None,
     };
 
     service
@@ -1059,6 +1060,7 @@ async fn test_pipeline_shielded_double_spend_prevention() {
         commitment: [0x22; 32],
         ciphertext: vec![0x33; 64],
         ephemeral_key: [0x44; 32],
+        nonce: None,
     };
 
     service
@@ -1084,6 +1086,7 @@ async fn test_pipeline_shielded_double_spend_prevention() {
         commitment: [0x55; 32],
         ciphertext: vec![0x66; 64],
         ephemeral_key: [0x77; 32],
+        nonce: None,
     };
 
     service
@@ -1208,6 +1211,7 @@ async fn test_pipeline_full_l2_cycle_with_shielded() {
         commitment: [0xAD; 32],
         ciphertext: vec![0xBE; 64],
         ephemeral_key: [0xEF; 32],
+        nonce: None,
     };
 
     service

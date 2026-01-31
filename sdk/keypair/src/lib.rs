@@ -14,6 +14,56 @@ pub struct Keypair {
     privacy_key: StaticSecret,
 }
 
+/// Build the human-readable transfer message that matches TypeScript clients.
+///
+/// This format:
+/// 1. Is obviously NOT a Solana transaction (prevents Phantom blocking)
+/// 2. Users can read what they're signing (good UX)
+/// 3. Similar to EIP-712 on Ethereum
+fn build_transfer_message(
+    from: &[u8; 32],
+    to: &[u8; 32],
+    amount: u64,
+    nonce: u64,
+    chain_id: u64,
+) -> String {
+    format!(
+        "Zelana L2 Transfer\n\n\
+         From: {}\n\
+         To: {}\n\
+         Amount: {} lamports\n\
+         Nonce: {}\n\
+         Chain ID: {}\n\n\
+         Sign to authorize this L2 transfer.",
+        hex::encode(from),
+        hex::encode(to),
+        amount,
+        nonce,
+        chain_id
+    )
+}
+
+/// Build the human-readable withdrawal message that matches TypeScript clients.
+fn build_withdraw_message(
+    from: &[u8; 32],
+    to_l1_address: &[u8; 32],
+    amount: u64,
+    nonce: u64,
+) -> String {
+    format!(
+        "Zelana L2 Withdrawal\n\n\
+         From: {}\n\
+         To L1: {}\n\
+         Amount: {} lamports\n\
+         Nonce: {}\n\n\
+         Sign to authorize this withdrawal to Solana L1.",
+        hex::encode(from),
+        bs58::encode(to_l1_address).into_string(),
+        amount,
+        nonce
+    )
+}
+
 impl Keypair {
     /// Generates a fresh random wallet.
     pub fn new_random() -> Self {
@@ -64,13 +114,23 @@ impl Keypair {
         }
     }
 
-    /// Signs a transaction payload.
-    /// This automatically attaches the signer's public key for the ZK Circuit.
+    /// Signs a transaction payload using human-readable text format.
+    ///
+    /// This format is compatible with wallet signing (Phantom/Privy)
+    /// and the Rust sequencer verification.
     pub fn sign_transaction(&self, data: TransactionData) -> SignedTransaction {
-        let msg = wincode::serialize(&data).expect("Serialization failed");
+        // Build human-readable message
+        let msg_text = build_transfer_message(
+            &data.from.0,
+            &data.to.0,
+            data.amount,
+            data.nonce,
+            data.chain_id,
+        );
+        let msg = msg_text.as_bytes();
 
-        // Sign the serialized bytes
-        let signature = self.signing_key.sign(&msg).to_bytes().to_vec();
+        // Sign the text message
+        let signature = self.signing_key.sign(msg).to_bytes().to_vec();
 
         SignedTransaction {
             data,
@@ -79,24 +139,21 @@ impl Keypair {
         }
     }
 
-    /// Signs a withdrawal request.
-    /// The message format is: from || to_l1_address || amount (le) || nonce (le)
+    /// Signs a withdrawal request using human-readable text format.
     pub fn sign_withdrawal(
         &self,
         to_l1_address: [u8; 32],
         amount: u64,
         nonce: u64,
     ) -> zelana_transaction::WithdrawRequest {
-        // Build canonical message
-        let mut msg = Vec::with_capacity(32 + 32 + 8 + 8);
         let from = self.account_id();
-        msg.extend_from_slice(&from.0);
-        msg.extend_from_slice(&to_l1_address);
-        msg.extend_from_slice(&amount.to_le_bytes());
-        msg.extend_from_slice(&nonce.to_le_bytes());
 
-        // Sign
-        let signature = self.signing_key.sign(&msg).to_bytes().to_vec();
+        // Build human-readable message
+        let msg_text = build_withdraw_message(&from.0, &to_l1_address, amount, nonce);
+        let msg = msg_text.as_bytes();
+
+        // Sign the text message
+        let signature = self.signing_key.sign(msg).to_bytes().to_vec();
 
         zelana_transaction::WithdrawRequest {
             from,

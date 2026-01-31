@@ -112,6 +112,8 @@ export interface ShieldedRequest {
   commitment: Bytes32;
   ciphertext: Uint8Array;
   ephemeralKey: Bytes32;
+  /** Nonce for ChaCha20-Poly1305 encryption (12 bytes) */
+  nonce?: Uint8Array;
 }
 
 /** Shielded transaction response */
@@ -196,6 +198,8 @@ export interface ScannedNote {
   position: number;
   commitment: string;
   value: bigint;
+  /** Blinding factor (randomness) for the note - needed for proof generation */
+  blinding: string;
   memo?: string;
 }
 

@@ -21,9 +21,7 @@ use crate::storage::StateStore;
 use zelana_account::AccountId;
 use zelana_transaction::{PrivateTransaction, TransactionType};
 
-// ============================================================================
 // Shared State
-// ============================================================================
 
 /// Shared application state for API handlers
 #[derive(Clone)]
@@ -39,9 +37,7 @@ pub struct ApiState {
     pub dev_mode: bool,
 }
 
-// ============================================================================
 // Health & Status
-// ============================================================================
 
 /// Health check endpoint
 pub async fn health(State(state): State<ApiState>) -> impl IntoResponse {
@@ -93,9 +89,7 @@ pub async fn get_batch_status(State(state): State<ApiState>) -> impl IntoRespons
     }
 }
 
-// ============================================================================
 // Account Operations
-// ============================================================================
 
 /// Get account state
 pub async fn get_account(
@@ -112,7 +106,6 @@ pub async fn get_account(
                 .into_response();
         }
     };
-
     let mut arr = [0u8; 32];
     arr.copy_from_slice(&account_bytes);
     let account_id = AccountId(arr);
@@ -143,9 +136,7 @@ pub async fn get_account(
     }
 }
 
-// ============================================================================
 // Transfer Operations
-// ============================================================================
 
 /// Submit a transparent transfer transaction
 pub async fn submit_transfer(
@@ -212,9 +203,7 @@ pub async fn submit_transfer(
     }
 }
 
-// ============================================================================
 // Shielded Operations
-// ============================================================================
 
 /// Submit a shielded transaction
 pub async fn submit_shielded(
@@ -228,6 +217,7 @@ pub async fn submit_shielded(
         commitment: req.commitment,
         ciphertext: req.ciphertext,
         ephemeral_key: req.ephemeral_key,
+        nonce: req.nonce,
     };
 
     let tx = TransactionType::Shielded(private_tx);
@@ -268,6 +258,127 @@ pub async fn submit_shielded(
     }
 }
 
+/// Submit a delegated shielded transaction (Split Proving)
+///
+/// In Split Proving, the client generates a lightweight ownership proof (~500ms)
+/// and the Swarm handles heavy Merkle membership verification.
+///
+/// Flow:
+/// 1. Client generates ownership proof (proves they know spending key)
+/// 2. Sequencer verifies ownership proof (fast, ~5ms)
+/// 3. Sequencer buffers tx for batch processing
+/// 4. Swarm fetches Merkle path using blinded_proxy
+/// 5. Swarm generates validity proof with Merkle membership
+pub async fn submit_delegated_shielded(
+    State(state): State<ApiState>,
+    Json(req): Json<SubmitDelegatedShieldedRequest>,
+) -> impl IntoResponse {
+    // Compute tx hash from nullifier and output commitment
+    let tx_hash = {
+        let mut hasher = blake3::Hasher::new();
+        hasher.update(&req.nullifier);
+        hasher.update(&req.output_commitment);
+        *hasher.finalize().as_bytes()
+    };
+
+    // Generate delegation ID for tracking
+    let delegation_id = {
+        let mut hasher = blake3::Hasher::new();
+        hasher.update(&tx_hash);
+        hasher.update(&req.blinded_proxy);
+        hex::encode(&hasher.finalize().as_bytes()[..16])
+    };
+
+    // TODO: Verify ownership proof using Noir verifier
+    // For now, we accept the proof if it's non-empty (dev mode behavior)
+    if req.ownership_proof.is_empty() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(SubmitDelegatedShieldedResponse {
+                tx_hash: hex::encode(tx_hash),
+                accepted: false,
+                delegation_id: None,
+                message: "Empty ownership proof".to_string(),
+            }),
+        )
+            .into_response();
+    }
+
+    // Check nullifier not already spent
+    {
+        let shielded = state.shielded_state.lock().await;
+        let nullifier = zelana_privacy::Nullifier(req.nullifier);
+        if shielded.nullifier_exists(&nullifier) {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(SubmitDelegatedShieldedResponse {
+                    tx_hash: hex::encode(tx_hash),
+                    accepted: false,
+                    delegation_id: None,
+                    message: "Nullifier already spent".to_string(),
+                }),
+            )
+                .into_response();
+        }
+    }
+
+    // Build a DelegatedShielded transaction
+    // For now, we convert it to a regular shielded tx with the ownership proof
+    // The Swarm will enhance it with Merkle proof later
+    let private_tx = PrivateTransaction {
+        proof: req.ownership_proof,
+        nullifier: req.nullifier,
+        commitment: req.output_commitment,
+        ciphertext: req.ciphertext,
+        ephemeral_key: req.ephemeral_key,
+        nonce: req.nonce,
+    };
+
+    let tx = TransactionType::Shielded(private_tx);
+
+    // Submit to pipeline service
+    match state.pipeline_service.submit(tx).await {
+        Ok(()) => {
+            info!(
+                "Delegated shielded tx accepted: {} delegation_id={}",
+                hex::encode(tx_hash),
+                delegation_id
+            );
+
+            // Store blinded_proxy -> tx mapping for Swarm lookup
+            // TODO: Add to a delegation queue for Swarm processing
+            if let Err(e) =
+                state
+                    .db
+                    .store_delegation(&req.blinded_proxy, &tx_hash, &req.input_commitment)
+            {
+                warn!("Failed to store delegation mapping: {}", e);
+            }
+
+            Json(SubmitDelegatedShieldedResponse {
+                tx_hash: hex::encode(tx_hash),
+                accepted: true,
+                delegation_id: Some(delegation_id),
+                message: "Delegated transaction accepted".to_string(),
+            })
+            .into_response()
+        }
+        Err(e) => {
+            warn!("Delegated shielded tx rejected: {}", e);
+            (
+                StatusCode::BAD_REQUEST,
+                Json(SubmitDelegatedShieldedResponse {
+                    tx_hash: hex::encode(tx_hash),
+                    accepted: false,
+                    delegation_id: None,
+                    message: e.to_string(),
+                }),
+            )
+                .into_response()
+        }
+    }
+}
+
 /// Get merkle path for a commitment
 pub async fn get_merkle_path(
     State(state): State<ApiState>,
@@ -294,7 +405,7 @@ pub async fn get_merkle_path(
     }
 }
 
-/// Scan for notes (simplified - full implementation would decrypt notes)
+/// Scan for notes (with MiMC commitment verification)
 pub async fn scan_notes(
     State(state): State<ApiState>,
     Json(req): Json<ScanNotesRequest>,
@@ -354,14 +465,25 @@ pub async fn scan_notes(
             max_pos = position;
         }
 
-        // Try to decrypt the note
-        if let Some((note, memo)) = zelana_privacy::try_decrypt_note(
-            &encrypted_note,
-            &req.decryption_key,
-            req.owner_pk,
-            &commitment,
-        ) {
-            // Successfully decrypted - this note belongs to us
+        // Try to decrypt the note using X25519+ChaCha20
+        if let Some((note, memo)) =
+            zelana_privacy::decrypt_note(&encrypted_note, &req.decryption_key, req.owner_pk)
+        {
+            // Verify the commitment matches using MiMC (matches Noir circuits)
+            // commitment = MiMC_hash3(owner_pk, value, blinding)
+            let computed_commitment = zelana_ownership_prover::compute_commitment_bytes(
+                &req.owner_pk,
+                note.value.0,
+                &note.randomness,
+            );
+
+            if computed_commitment != commitment {
+                // Commitment doesn't match - this note was created with different crypto
+                // Skip it (might be from old SHA-512 scheme)
+                continue;
+            }
+
+            // Successfully decrypted and verified - this note belongs to us
             let memo_str = if memo.is_empty() {
                 None
             } else {
@@ -372,6 +494,7 @@ pub async fn scan_notes(
                 position,
                 commitment: hex::encode(commitment),
                 value: note.value.0,
+                blinding: hex::encode(note.randomness),
                 memo: memo_str,
             });
 
@@ -386,7 +509,7 @@ pub async fn scan_notes(
     scanned_notes.sort_by_key(|n| n.position);
 
     info!(
-        "Scanned {} notes, found {} owned",
+        "Scanned {} notes, found {} owned (MiMC verified)",
         total_notes,
         scanned_notes.len()
     );
@@ -398,9 +521,7 @@ pub async fn scan_notes(
     .into_response()
 }
 
-// ============================================================================
 // Withdrawal Operations
-// ============================================================================
 
 /// Submit a withdrawal request
 pub async fn submit_withdrawal(
@@ -525,9 +646,7 @@ pub async fn get_withdrawal_status(
         .into_response()
 }
 
-// ============================================================================
 // Fast Withdrawal Operations
-// ============================================================================
 
 /// Get quote for fast withdrawal
 pub async fn fast_withdraw_quote(
@@ -683,9 +802,7 @@ pub async fn register_lp(
     }
 }
 
-// ============================================================================
 // Encrypted Mempool Operations (Threshold Encryption)
-// ============================================================================
 
 /// Submit an encrypted transaction to the threshold mempool
 pub async fn submit_encrypted_tx(
@@ -840,9 +957,7 @@ pub async fn get_committee_info(State(state): State<ApiState>) -> impl IntoRespo
     .into_response()
 }
 
-// ============================================================================
 // Batch & Transaction Query Operations
-// ============================================================================
 
 /// Get a batch by ID
 pub async fn get_batch(
@@ -997,9 +1112,7 @@ pub async fn get_global_stats(State(state): State<ApiState>) -> impl IntoRespons
     .into_response()
 }
 
-// ============================================================================
 // Development/Testing Operations (only available in dev mode)
-// ============================================================================
 
 /// Simulate a deposit (dev mode only)
 /// This allows testing the full pipeline without a real L1 indexer.

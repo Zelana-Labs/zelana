@@ -54,14 +54,14 @@ export class ApiClient {
   private readonly fetch: typeof fetch;
 
   constructor(config: ApiClientConfig) {
-    this.baseUrl = config.baseUrl.replace(/\/$/, ''); // Remove trailing slash
+    this.baseUrl = config.baseUrl.replace(/\/$/, ''); 
     this.timeout = config.timeout ?? 30000;
-    this.fetch = config.fetch ?? globalThis.fetch;
+    this.fetch = config.fetch
+    ? config.fetch
+    : globalThis.fetch.bind(globalThis);
   }
 
-  // ==========================================================================
   // Private Helpers
-  // ==========================================================================
 
   private async request<T>(
     method: 'GET' | 'POST',
@@ -126,9 +126,7 @@ export class ApiClient {
     return this.request<T>('POST', path, body);
   }
 
-  // ==========================================================================
   // Health & Status
-  // ==========================================================================
 
   /**
    * Check if the sequencer is healthy
@@ -208,9 +206,7 @@ export class ApiClient {
     };
   }
 
-  // ==========================================================================
   // Account Operations
-  // ==========================================================================
 
   /**
    * Get account state by ID (hex-encoded public key)
@@ -235,9 +231,7 @@ export class ApiClient {
     return this.getAccount(bytesToHex(pubkey));
   }
 
-  // ==========================================================================
   // Transfer Operations
-  // ==========================================================================
 
   /**
    * Submit a signed transfer transaction
@@ -263,9 +257,7 @@ export class ApiClient {
     };
   }
 
-  // ==========================================================================
   // Withdrawal Operations
-  // ==========================================================================
 
   /**
    * Submit a signed withdrawal request
@@ -334,9 +326,7 @@ export class ApiClient {
     };
   }
 
-  // ==========================================================================
   // Shielded Operations
-  // ==========================================================================
 
   /**
    * Submit a shielded transaction
@@ -353,6 +343,7 @@ export class ApiClient {
       commitment: Array.from(request.commitment),
       ciphertext: Array.from(request.ciphertext),
       ephemeral_key: Array.from(request.ephemeralKey),
+      nonce: request.nonce ? Array.from(request.nonce) : undefined,
     });
     return {
       txHash: resp.tx_hash,
@@ -392,6 +383,7 @@ export class ApiClient {
         position: number;
         commitment: string;
         value: number;
+        blinding: string;
         memo?: string;
       }>;
       scanned_to: number;
@@ -406,15 +398,14 @@ export class ApiClient {
         position: n.position,
         commitment: n.commitment,
         value: BigInt(n.value),
+        blinding: n.blinding,
         memo: n.memo,
       })),
       scannedTo: resp.scanned_to,
     };
   }
 
-  // ==========================================================================
   // Batch & Transaction Queries
-  // ==========================================================================
 
   /**
    * Get batch by ID
@@ -527,9 +518,7 @@ export class ApiClient {
     };
   }
 
-  // ==========================================================================
   // Committee (Threshold Encryption)
-  // ==========================================================================
 
   /**
    * Get threshold encryption committee info
@@ -561,9 +550,7 @@ export class ApiClient {
     };
   }
 
-  // ==========================================================================
   // Dev Mode Endpoints (Testing Only)
-  // ==========================================================================
 
   /**
    * Simulate a deposit from L1 (DEV MODE ONLY)

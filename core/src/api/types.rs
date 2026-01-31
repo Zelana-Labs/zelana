@@ -4,9 +4,7 @@
 
 use serde::{Deserialize, Serialize};
 
-// ============================================================================
 // Shielded Operations
-// ============================================================================
 
 /// Request to submit a shielded transaction
 #[derive(Debug, Deserialize)]
@@ -21,6 +19,47 @@ pub struct SubmitShieldedRequest {
     pub ciphertext: Vec<u8>,
     /// Ephemeral public key for note decryption
     pub ephemeral_key: [u8; 32],
+    /// Nonce for ChaCha20-Poly1305 encryption (12 bytes)
+    #[serde(default)]
+    pub nonce: Option<[u8; 12]>,
+}
+
+/// Request to submit a delegated shielded transaction (Split Proving)
+///
+/// In Split Proving, the client generates a lightweight ownership proof
+/// and the Swarm handles heavy Merkle membership verification.
+#[derive(Debug, Deserialize)]
+pub struct SubmitDelegatedShieldedRequest {
+    /// Lightweight ownership proof (UltraHonk, ~4KB)
+    pub ownership_proof: Vec<u8>,
+    /// Nullifier for the input note being spent
+    pub nullifier: [u8; 32],
+    /// Input commitment (the note being spent)
+    pub input_commitment: [u8; 32],
+    /// Blinded proxy for Swarm Merkle lookup
+    pub blinded_proxy: [u8; 32],
+    /// Output commitment (new note being created)
+    pub output_commitment: [u8; 32],
+    /// Encrypted note data for recipient
+    pub ciphertext: Vec<u8>,
+    /// Ephemeral public key for note decryption
+    pub ephemeral_key: [u8; 32],
+    /// Nonce for ChaCha20-Poly1305 encryption (12 bytes)
+    #[serde(default)]
+    pub nonce: Option<[u8; 12]>,
+}
+
+/// Response after submitting a delegated shielded transaction
+#[derive(Debug, Serialize)]
+pub struct SubmitDelegatedShieldedResponse {
+    /// Transaction hash
+    pub tx_hash: String,
+    /// Whether the transaction was accepted
+    pub accepted: bool,
+    /// Delegation ID for tracking proof generation
+    pub delegation_id: Option<String>,
+    /// Human-readable message
+    pub message: String,
 }
 
 /// Response after submitting a shielded transaction
@@ -51,6 +90,8 @@ pub struct ScannedNote {
     pub position: u32,
     pub commitment: String,
     pub value: u64,
+    /// Blinding factor (randomness) for the note - needed for proof generation
+    pub blinding: String,
     pub memo: Option<String>,
 }
 
@@ -76,9 +117,7 @@ pub struct MerklePathResponse {
     pub root: String,
 }
 
-// ============================================================================
 // Account Operations
-// ============================================================================
 
 /// Request to get account state
 #[derive(Debug, Deserialize)]
@@ -95,9 +134,7 @@ pub struct AccountStateResponse {
     pub nonce: u64,
 }
 
-// ============================================================================
 // Transfer Operations
-// ============================================================================
 
 /// Request to submit a transparent transfer
 #[derive(Debug, Deserialize)]
@@ -126,9 +163,7 @@ pub struct TransferResponse {
     pub message: String,
 }
 
-// ============================================================================
 // Withdrawal Operations
-// ============================================================================
 
 /// Request to initiate a withdrawal
 #[derive(Debug, Deserialize)]
@@ -172,9 +207,7 @@ pub struct WithdrawalStatusResponse {
     pub l1_tx_sig: Option<String>,
 }
 
-// ============================================================================
 // State Queries
-// ============================================================================
 
 /// Response with current state roots
 #[derive(Debug, Serialize)]
@@ -202,9 +235,7 @@ pub struct HealthResponse {
     pub uptime_secs: u64,
 }
 
-// ============================================================================
 // Fast Withdrawal Types
-// ============================================================================
 
 /// Request for fast withdrawal quote
 #[derive(Debug, Deserialize)]
@@ -263,9 +294,7 @@ pub struct RegisterLpResponse {
     pub message: String,
 }
 
-// ============================================================================
 // Encrypted Mempool Types (Threshold Encryption)
-// ============================================================================
 
 /// Request to submit a threshold-encrypted transaction
 #[derive(Debug, Deserialize)]
@@ -325,13 +354,9 @@ pub struct CommitteeInfoResponse {
     pub pending_count: usize,
 }
 
-// ============================================================================
 // Error Response
-// ============================================================================
 
-// ============================================================================
 // Development/Testing Endpoints
-// ============================================================================
 
 /// Request to simulate a deposit (dev mode only)
 #[derive(Debug, Deserialize)]
@@ -367,9 +392,7 @@ pub struct DevSealResponse {
     pub message: String,
 }
 
-// ============================================================================
 // Error Response
-// ============================================================================
 
 /// Standard error response
 #[derive(Debug, Serialize)]
@@ -399,9 +422,7 @@ impl ErrorResponse {
     }
 }
 
-// ============================================================================
 // Batch & Transaction Query Types
-// ============================================================================
 
 /// Pagination parameters for list queries
 #[derive(Debug, Deserialize)]

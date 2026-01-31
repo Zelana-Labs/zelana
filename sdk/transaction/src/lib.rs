@@ -36,6 +36,9 @@ pub struct PrivateTransaction {
     pub ciphertext: Vec<u8>,
     /// Optional: Ephemeral public key for ECDH shared secret derivation.
     pub ephemeral_key: [u8; 32],
+    /// Optional: Nonce for ChaCha20-Poly1305 encryption (12 bytes).
+    #[serde(default)]
+    pub nonce: Option<[u8; 12]>,
 }
 /// The Wrapper Structure
 #[derive(Clone, Debug, SchemaWrite, SchemaRead, Serialize, Deserialize)]

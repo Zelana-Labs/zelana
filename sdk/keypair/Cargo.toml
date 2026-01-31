@@ -7,6 +7,7 @@ edition = { workspace = true }
 [dependencies]
 chacha20poly1305 = { workspace = true }
 ed25519-dalek = { workspace = true }
+hex = { workspace = true }
 wincode = { workspace = true }
 x25519-dalek = { workspace = true, features = ["static_secrets"] }
 zelana-transaction = { workspace = true }

@@ -382,7 +382,7 @@ export class ShieldedTransactionBuilder {
 
     // Encrypt outputs for recipients
     const encryptedOutputs = outputsWithCommitments.map((o) => 
-      encryptNote(o.note, o.memo)
+      encryptNote(o.note, o.note.ownerPk, o.memo)
     );
 
     return {
@@ -412,54 +412,50 @@ export class ShieldedTransactionBuilder {
 }
 
 // ============================================================================
-// Note Encryption (Simplified)
+// Note Encryption (Production-ready)
 // ============================================================================
+
+import {
+  encryptNote as encryptNoteProper,
+  decryptNote as decryptNoteProper,
+  generateX25519Keypair,
+  x25519PublicKey,
+  type EncryptedNote as EncryptedNoteProper,
+} from './encryption.js';
 
 /**
  * Encrypt a note for the recipient
  * 
- * Note: This is a simplified version. Production should use:
- * - X25519 ECDH for key agreement
- * - ChaCha20-Poly1305 for authenticated encryption
+ * Uses X25519 ECDH for key agreement and ChaCha20-Poly1305 for
+ * authenticated encryption. Matches the Rust privacy SDK implementation.
  * 
- * For now, we use a deterministic encryption based on the note data,
- * which is suitable for the MVP but should be replaced with proper
- * ECIES encryption.
+ * @param note - The note to encrypt
+ * @param recipientViewingPk - Recipient's X25519 viewing public key
+ * @param memo - Optional memo (max 512 bytes)
  */
-function encryptNote(note: Note, memo?: Uint8Array): EncryptedNote {
-  // Generate ephemeral "keypair" (simplified - just random bytes)
-  const ephemeralPk = randomBytes(32);
-  const nonce = randomBytes(12);
-  
-  // Serialize note data
-  const plaintext = concatBytes(
-    u64ToLeBytes(note.value),
+function encryptNote(note: Note, recipientViewingPk: Bytes32, memo?: Uint8Array): EncryptedNote {
+  const encrypted = encryptNoteProper(
+    note.value,
     note.randomness,
-    memo ? new Uint8Array([...u16ToLeBytes(memo.length), ...memo]) : new Uint8Array([0, 0])
+    recipientViewingPk,
+    memo
   );
   
-  // "Encrypt" with XOR (NOT SECURE - placeholder for real encryption)
-  // In production, use X25519 + ChaCha20-Poly1305
-  const key = sha512(concatBytes(ephemeralPk, note.ownerPk)).slice(0, 32);
-  const ciphertext = xorEncrypt(plaintext, key, nonce);
-  
   return {
-    ephemeralPk,
-    nonce,
-    ciphertext,
+    ephemeralPk: encrypted.ephemeralPk,
+    nonce: encrypted.nonce,
+    ciphertext: encrypted.ciphertext,
   };
 }
 
 /**
- * Simple XOR encryption (NOT SECURE - placeholder)
+ * Legacy encryption for self (when recipientViewingPk is the note owner's viewing key)
+ * @deprecated Use encryptNote with explicit recipientViewingPk
  */
-function xorEncrypt(data: Uint8Array, key: Uint8Array, nonce: Uint8Array): Uint8Array {
-  const stream = sha512(concatBytes(key, nonce));
-  const result = new Uint8Array(data.length);
-  for (let i = 0; i < data.length; i++) {
-    result[i] = data[i] ^ stream[i % stream.length];
-  }
-  return result;
+function encryptNoteForSelf(note: Note, viewingSecretKey: Bytes32): EncryptedNote {
+  // Derive viewing public key from secret key
+  const viewingPk = x25519PublicKey(viewingSecretKey);
+  return encryptNote(note, viewingPk);
 }
 
 function u16ToLeBytes(value: number): Uint8Array {

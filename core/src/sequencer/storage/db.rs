@@ -146,6 +146,10 @@ const CF_INDEXER_META: &str = "indexer_meta";
 /// Keys: "dev_deposits_total", "l1_deposits_total", "withdrawals_total"
 const CF_STATS: &str = "stats";
 
+/// Delegated proof requests (Split Proving)
+/// Key: [u8; 32] (blinded_proxy), Value: JSON(DelegationInfo)
+const CF_DELEGATIONS: &str = "delegations";
+
 // =============================================================================
 // RocksDbStore
 // =============================================================================
@@ -192,6 +196,7 @@ impl RocksDbStore {
             ColumnFamilyDescriptor::new(CF_TX_INDEX, Options::default()),
             ColumnFamilyDescriptor::new(CF_INDEXER_META, Options::default()),
             ColumnFamilyDescriptor::new(CF_STATS, Options::default()),
+            ColumnFamilyDescriptor::new(CF_DELEGATIONS, Options::default()),
         ];
 
         let db = DB::open_cf_descriptors(&opts, path, families)
@@ -536,6 +541,87 @@ impl RocksDbStore {
         }
 
         Ok(withdrawals)
+    }
+
+    // =========================================================================
+    // Delegation Methods (Split Proving)
+    // =========================================================================
+
+    /// Store a delegation request for Swarm processing
+    ///
+    /// The Swarm uses blinded_proxy to look up pending delegations and
+    /// fetch the Merkle path for the input commitment.
+    pub fn store_delegation(
+        &self,
+        blinded_proxy: &[u8; 32],
+        tx_hash: &[u8; 32],
+        input_commitment: &[u8; 32],
+    ) -> Result<()> {
+        let cf = self
+            .db
+            .cf_handle(CF_DELEGATIONS)
+            .context("delegations CF missing")?;
+
+        // Store as JSON for flexibility
+        let info = serde_json::json!({
+            "tx_hash": hex::encode(tx_hash),
+            "input_commitment": hex::encode(input_commitment),
+            "created_at": std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .unwrap_or(0),
+        });
+
+        self.db
+            .put_cf(cf, blinded_proxy, info.to_string().as_bytes())?;
+        Ok(())
+    }
+
+    /// Get a delegation by blinded proxy
+    pub fn get_delegation(&self, blinded_proxy: &[u8; 32]) -> Result<Option<serde_json::Value>> {
+        let cf = self
+            .db
+            .cf_handle(CF_DELEGATIONS)
+            .context("delegations CF missing")?;
+
+        match self.db.get_cf(cf, blinded_proxy)? {
+            Some(data) => {
+                let info: serde_json::Value = serde_json::from_slice(&data)?;
+                Ok(Some(info))
+            }
+            None => Ok(None),
+        }
+    }
+
+    /// Delete a delegation after Swarm processing
+    pub fn delete_delegation(&self, blinded_proxy: &[u8; 32]) -> Result<()> {
+        let cf = self
+            .db
+            .cf_handle(CF_DELEGATIONS)
+            .context("delegations CF missing")?;
+
+        self.db.delete_cf(cf, blinded_proxy)?;
+        Ok(())
+    }
+
+    /// Get all pending delegations (for Swarm batch processing)
+    pub fn get_all_delegations(&self) -> Result<Vec<([u8; 32], serde_json::Value)>> {
+        let cf = self
+            .db
+            .cf_handle(CF_DELEGATIONS)
+            .context("delegations CF missing")?;
+
+        let mut delegations = Vec::new();
+        let iter = self.db.iterator_cf(cf, rocksdb::IteratorMode::Start);
+
+        for item in iter {
+            let (key, value) = item?;
+            let proxy: [u8; 32] = key.as_ref().try_into().context("invalid proxy length")?;
+            let info: serde_json::Value = serde_json::from_slice(&value)?;
+            delegations.push((proxy, info));
+        }
+
+        Ok(delegations)
     }
 
     // =========================================================================

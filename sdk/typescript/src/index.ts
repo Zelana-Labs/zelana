@@ -43,6 +43,7 @@ export type { ZelanaClientConfig } from './zelana';
 
 // Keypair & PublicKey
 export { Keypair, PublicKey } from './keypair';
+export type { Signer } from './keypair';
 
 // Low-level API client
 export { ApiClient } from './client';
@@ -129,6 +130,15 @@ export type {
   MerklePath as ShieldedMerklePath,
 } from './shielded';
 
+// Note Encryption (X25519 + ChaCha20-Poly1305)
+export {
+  encryptNote,
+  decryptNote,
+  x25519PublicKey,
+  serializeEncryptedNote,
+  deserializeEncryptedNote,
+} from './encryption';
+
 // Utilities
 export {
   bytesToHex,
@@ -141,3 +151,18 @@ export {
   bytesEqual,
   randomBytes,
 } from './utils';
+
+// Ownership Prover (Split Proving)
+export {
+  OwnershipProver,
+  MockOwnershipProver,
+  mockProver,
+  getProver,
+  computeOwnershipWitness,
+} from './prover';
+
+export type {
+  OwnershipWitness,
+  OwnershipProof,
+  DelegatedShieldedRequest,
+} from './prover';

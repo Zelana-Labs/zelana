@@ -2,6 +2,9 @@
  * Zelana Keypair - Ed25519 key management and signing
  * 
  * Provides key generation, import/export, and transaction signing.
+ * 
+ * Uses human-readable text messages for signing to match the wallet-signer
+ * format and work correctly with the Rust sequencer.
  */
 
 import * as ed from '@noble/ed25519';
@@ -11,11 +14,86 @@ import {
   hexToBytes, 
   bytesToBase58, 
   base58ToBytes,
-  u64ToLeBytes,
-  concatBytes,
   randomBytes
 } from './utils';
 import type { Bytes32, TransferRequest, WithdrawRequest } from './types';
+
+// ============================================================================
+// Human-Readable Message Builders
+// ============================================================================
+
+/**
+ * Build a human-readable transfer message for signing.
+ * 
+ * This format:
+ * 1. Is obviously NOT a Solana transaction (prevents Phantom blocking)
+ * 2. Users can read what they're signing (good UX)
+ * 3. Similar to EIP-712 on Ethereum
+ * 
+ * IMPORTANT: The Rust sequencer must build the EXACT same message to verify.
+ */
+function buildTransferMessage(
+  from: Uint8Array,
+  to: Uint8Array,
+  amount: bigint,
+  nonce: bigint,
+  chainId: bigint
+): string {
+  return `Zelana L2 Transfer
+
+From: ${bytesToHex(from)}
+To: ${bytesToHex(to)}
+Amount: ${amount.toString()} lamports
+Nonce: ${nonce.toString()}
+Chain ID: ${chainId.toString()}
+
+Sign to authorize this L2 transfer.`;
+}
+
+/**
+ * Build a human-readable withdrawal message for signing.
+ */
+function buildWithdrawMessage(
+  from: Uint8Array,
+  toL1Address: Uint8Array,
+  amount: bigint,
+  nonce: bigint
+): string {
+  return `Zelana L2 Withdrawal
+
+From: ${bytesToHex(from)}
+To L1: ${bytesToBase58(toL1Address)}
+Amount: ${amount.toString()} lamports
+Nonce: ${nonce.toString()}
+
+Sign to authorize this withdrawal to Solana L1.`;
+}
+
+// ============================================================================
+// Signer Interface
+// ============================================================================
+
+/**
+ * Signer interface for L2 transactions.
+ * 
+ * This allows using different signing mechanisms:
+ * - Keypair (local Ed25519 key)
+ * - WalletSigner (external wallet like Solana wallet)
+ */
+export interface Signer {
+  /** The public key as 32 bytes */
+  readonly publicKey: Bytes32;
+  /** The public key as hex string */
+  readonly publicKeyHex: string;
+  /** The public key as base58 (Solana format) */
+  readonly publicKeyBase58: string;
+  /** Sign a message and return the 64-byte signature */
+  sign(message: Uint8Array): Promise<Uint8Array>;
+  /** Sign a transfer and return the signed request */
+  signTransfer(to: Bytes32, amount: bigint, nonce: bigint, chainId?: bigint): Promise<TransferRequest>;
+  /** Sign a withdrawal and return the signed request */
+  signWithdrawal(toL1Address: Bytes32, amount: bigint, nonce: bigint): Promise<WithdrawRequest>;
+}
 
 // Configure ed25519 to use sha512
 ed.etc.sha512Sync = (...m) => sha512(ed.etc.concatBytes(...m));
@@ -25,8 +103,10 @@ ed.etc.sha512Sync = (...m) => sha512(ed.etc.concatBytes(...m));
  * 
  * Wraps an Ed25519 keypair and provides signing methods for
  * transfers, withdrawals, and other L2 operations.
+ * 
+ * Implements the Signer interface.
  */
-export class Keypair {
+export class Keypair implements Signer {
   private readonly secretKey: Uint8Array; // 32-byte seed
   private readonly _publicKey: Uint8Array; // 32-byte public key
 
@@ -107,7 +187,14 @@ export class Keypair {
   /**
    * Sign arbitrary message bytes
    */
-  sign(message: Uint8Array): Uint8Array {
+  sign(message: Uint8Array): Promise<Uint8Array> {
+    return Promise.resolve(ed.sign(message, this.secretKey));
+  }
+
+  /**
+   * Sign synchronously (for internal use or when async is not needed)
+   */
+  signSync(message: Uint8Array): Uint8Array {
     return ed.sign(message, this.secretKey);
   }
 
@@ -123,31 +210,30 @@ export class Keypair {
   }
 
   /**
-   * Sign a transfer transaction
+   * Sign a transfer transaction using human-readable text format.
    * 
-   * The message format matches the Rust TransactionData wincode serialization:
-   * - from: [u8; 32]
-   * - to: [u8; 32]
-   * - amount: u64 (little-endian)
-   * - nonce: u64 (little-endian)
-   * - chain_id: u64 (little-endian)
+   * The message is a human-readable text string, which:
+   * 1. Works with Phantom/Privy (not blocked as Solana tx)
+   * 2. Matches the format verified by the Rust sequencer
    */
-  signTransfer(
+  async signTransfer(
     to: Bytes32,
     amount: bigint,
     nonce: bigint,
     chainId: bigint = BigInt(1)
-  ): TransferRequest {
-    // Build the message (wincode serialization of TransactionData)
-    const message = concatBytes(
-      this._publicKey,        // from
-      to,                     // to
-      u64ToLeBytes(amount),   // amount
-      u64ToLeBytes(nonce),    // nonce
-      u64ToLeBytes(chainId)   // chain_id
+  ): Promise<TransferRequest> {
+    // Build human-readable message
+    const messageText = buildTransferMessage(
+      this._publicKey,
+      to,
+      amount,
+      nonce,
+      chainId
     );
 
-    const signature = this.sign(message);
+    // Convert to UTF-8 bytes for signing
+    const message = new TextEncoder().encode(messageText);
+    const signature = await this.sign(message);
 
     return {
       from: this.publicKey,
@@ -161,28 +247,24 @@ export class Keypair {
   }
 
   /**
-   * Sign a withdrawal request
-   * 
-   * The message format matches the Rust withdrawal verification:
-   * - from: [u8; 32]
-   * - to_l1_address: [u8; 32]
-   * - amount: u64 (little-endian)
-   * - nonce: u64 (little-endian)
+   * Sign a withdrawal request using human-readable text format.
    */
-  signWithdrawal(
+  async signWithdrawal(
     toL1Address: Bytes32,
     amount: bigint,
     nonce: bigint
-  ): WithdrawRequest {
-    // Build the message
-    const message = concatBytes(
-      this._publicKey,          // from
-      toL1Address,              // to_l1_address
-      u64ToLeBytes(amount),     // amount
-      u64ToLeBytes(nonce)       // nonce
+  ): Promise<WithdrawRequest> {
+    // Build human-readable message
+    const messageText = buildWithdrawMessage(
+      this._publicKey,
+      toL1Address,
+      amount,
+      nonce
     );
 
-    const signature = this.sign(message);
+    // Convert to UTF-8 bytes for signing
+    const message = new TextEncoder().encode(messageText);
+    const signature = await this.sign(message);
 
     return {
       from: this.publicKey,

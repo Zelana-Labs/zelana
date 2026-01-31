@@ -5,7 +5,7 @@
  * This is the main entry point for interacting with Zelana L2.
  */
 
-import { Keypair, PublicKey } from './keypair';
+import { Keypair, PublicKey, Signer } from './keypair';
 import { ApiClient, ApiClientConfig } from './client';
 import { ZelanaError } from './types';
 import { bytesToHex } from './utils';
@@ -62,12 +62,13 @@ export interface ZelanaClientConfig extends ApiClientConfig {
  */
 export class ZelanaClient {
   private readonly api: ApiClient;
-  private readonly keypair: Keypair | null;
+  private readonly signer: Signer | null;
   private readonly chainId: bigint;
 
-  constructor(config: ZelanaClientConfig & { keypair?: Keypair }) {
+  constructor(config: ZelanaClientConfig & { keypair?: Keypair; signer?: Signer }) {
     this.api = new ApiClient(config);
-    this.keypair = config.keypair ?? null;
+    // Support both keypair (legacy) and signer (new) options
+    this.signer = config.signer ?? config.keypair ?? null;
     this.chainId = config.chainId ?? BigInt(1);
   }
 
@@ -79,17 +80,17 @@ export class ZelanaClient {
   }
 
   /**
-   * Get the public key of the configured keypair
+   * Get the public key of the configured signer
    */
   get publicKey(): Uint8Array | null {
-    return this.keypair?.publicKey ?? null;
+    return this.signer?.publicKey ?? null;
   }
 
   /**
    * Get the public key as hex string
    */
   get publicKeyHex(): string | null {
-    return this.keypair?.publicKeyHex ?? null;
+    return this.signer?.publicKeyHex ?? null;
   }
 
   // ==========================================================================
@@ -141,13 +142,13 @@ export class ZelanaClient {
   // ==========================================================================
 
   /**
-   * Get account state for the configured keypair
+   * Get account state for the configured signer
    */
   async getAccount(): Promise<AccountState> {
-    if (!this.keypair) {
-      throw new ZelanaError('No keypair configured', 'NO_KEYPAIR');
+    if (!this.signer) {
+      throw new ZelanaError('No signer configured', 'NO_SIGNER');
     }
-    return this.api.getAccountByPubkey(this.keypair.publicKey);
+    return this.api.getAccountByPubkey(this.signer.publicKey);
   }
 
   /**
@@ -196,8 +197,8 @@ export class ZelanaClient {
     amount: bigint,
     nonce?: bigint
   ): Promise<TransferResponse> {
-    if (!this.keypair) {
-      throw new ZelanaError('No keypair configured', 'NO_KEYPAIR');
+    if (!this.signer) {
+      throw new ZelanaError('No signer configured', 'NO_SIGNER');
     }
 
     // Resolve recipient pubkey
@@ -209,7 +210,7 @@ export class ZelanaClient {
     const txNonce = nonce ?? (await this.getNonce());
 
     // Sign transfer
-    const request = this.keypair.signTransfer(toPubkey, amount, txNonce, this.chainId);
+    const request = await this.signer.signTransfer(toPubkey, amount, txNonce, this.chainId);
 
     // Submit
     return this.api.submitTransfer(request);
@@ -258,8 +259,8 @@ export class ZelanaClient {
     amount: bigint,
     nonce?: bigint
   ): Promise<WithdrawResponse> {
-    if (!this.keypair) {
-      throw new ZelanaError('No keypair configured', 'NO_KEYPAIR');
+    if (!this.signer) {
+      throw new ZelanaError('No signer configured', 'NO_SIGNER');
     }
 
     // Resolve L1 address
@@ -271,7 +272,7 @@ export class ZelanaClient {
     const txNonce = nonce ?? (await this.getNonce());
 
     // Sign withdrawal
-    const request = this.keypair.signWithdrawal(l1Pubkey, amount, txNonce);
+    const request = await this.signer.signWithdrawal(l1Pubkey, amount, txNonce);
 
     // Submit
     return this.api.submitWithdrawal(request);
@@ -419,17 +420,17 @@ export class ZelanaClient {
    * Simulate a deposit from L1 (DEV MODE ONLY)
    * 
    * This method is only available when the sequencer is running with DEV_MODE=true.
-   * It bypasses the L1 indexer and directly credits funds to the configured keypair's account.
+   * It bypasses the L1 indexer and directly credits funds to the configured signer's account.
    * 
    * @param amount - Amount to deposit in lamports
    * @returns Deposit response with new balance
-   * @throws ZelanaError if dev mode is not enabled (404) or no keypair configured
+   * @throws ZelanaError if dev mode is not enabled (404) or no signer configured
    */
   async devDeposit(amount: bigint): Promise<DevDepositResponse> {
-    if (!this.keypair) {
-      throw new ZelanaError('No keypair configured', 'NO_KEYPAIR');
+    if (!this.signer) {
+      throw new ZelanaError('No signer configured', 'NO_SIGNER');
     }
-    return this.api.devDeposit(this.keypair.publicKeyHex, amount);
+    return this.api.devDeposit(this.signer.publicKeyHex, amount);
   }
 
   /**

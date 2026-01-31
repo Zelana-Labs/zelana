@@ -24,6 +24,10 @@ pub fn create_router(state: ApiState) -> Router {
         .route("/transfer", post(handlers::submit_transfer))
         // Shielded operations
         .route("/shielded/submit", post(handlers::submit_shielded))
+        .route(
+            "/shielded/delegated",
+            post(handlers::submit_delegated_shielded),
+        )
         .route("/shielded/merkle_path", post(handlers::get_merkle_path))
         .route("/shielded/scan", post(handlers::scan_notes))
         // Withdrawal operations

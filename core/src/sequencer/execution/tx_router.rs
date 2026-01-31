@@ -234,9 +234,11 @@ impl TxRouter {
             .context("failed to mark nullifier")?;
 
         // Create encrypted note for storage
+        // Note: The nonce is provided by the client in the transaction
+        // If not provided, we use zeros (legacy behavior)
         let encrypted_note = EncryptedNote {
             ephemeral_pk: tx.ephemeral_key,
-            nonce: [0u8; 12], // Extract from ciphertext if needed
+            nonce: tx.nonce.unwrap_or([0u8; 12]),
             ciphertext: tx.ciphertext,
         };
 
@@ -505,13 +507,65 @@ impl TxRouter {
     // Signature Verification
     // ========================================================================
 
+    /// Build the human-readable transfer message that TypeScript clients sign.
+    ///
+    /// This format:
+    /// 1. Is obviously NOT a Solana transaction (prevents Phantom blocking)
+    /// 2. Users can read what they're signing (good UX)
+    /// 3. Similar to EIP-712 on Ethereum
+    ///
+    /// IMPORTANT: This must produce the EXACT same string as the TypeScript version.
+    fn build_transfer_message(
+        from: &[u8; 32],
+        to: &[u8; 32],
+        amount: u64,
+        nonce: u64,
+        chain_id: u64,
+    ) -> String {
+        format!(
+            "Zelana L2 Transfer\n\n\
+             From: {}\n\
+             To: {}\n\
+             Amount: {} lamports\n\
+             Nonce: {}\n\
+             Chain ID: {}\n\n\
+             Sign to authorize this L2 transfer.",
+            hex::encode(from),
+            hex::encode(to),
+            amount,
+            nonce,
+            chain_id
+        )
+    }
+
+    /// Build the human-readable withdrawal message that TypeScript clients sign.
+    fn build_withdraw_message(
+        from: &[u8; 32],
+        to_l1_address: &[u8; 32],
+        amount: u64,
+        nonce: u64,
+    ) -> String {
+        format!(
+            "Zelana L2 Withdrawal\n\n\
+             From: {}\n\
+             To L1: {}\n\
+             Amount: {} lamports\n\
+             Nonce: {}\n\n\
+             Sign to authorize this withdrawal to Solana L1.",
+            hex::encode(from),
+            bs58::encode(to_l1_address).into_string(),
+            amount,
+            nonce
+        )
+    }
+
     /// Verify Ed25519 signature on a transfer transaction.
     ///
-    /// The message signed is the wincode-serialized TransactionData.
+    /// Supports multiple message formats for backwards compatibility:
+    /// 1. Human-readable text format (new, preferred - works with Phantom/Privy)
+    /// 2. Domain-prefixed binary format (migration format)
+    /// 3. Legacy wincode-serialized format (original format)
     fn verify_transfer_signature(tx: &SignedTransaction) -> Result<()> {
-        // Reconstruct the message that was signed (serialized TransactionData)
-        let msg = wincode::serialize(&tx.data).context("failed to serialize tx data")?;
-
         // Parse the public key
         let verifying_key = VerifyingKey::from_bytes(&tx.signer_pubkey)
             .map_err(|e| anyhow::anyhow!("invalid signer public key: {}", e))?;
@@ -526,36 +580,53 @@ impl TxRouter {
         let sig_bytes: [u8; 64] = tx.signature.as_slice().try_into().unwrap();
         let signature = Signature::from_bytes(&sig_bytes);
 
-        // Verify
-        verifying_key
-            .verify(&msg, &signature)
-            .map_err(|e| anyhow::anyhow!("signature verification failed: {}", e))?;
+        // Try human-readable format first (new, preferred)
+        let human_readable_msg = Self::build_transfer_message(
+            &tx.data.from.0,
+            &tx.data.to.0,
+            tx.data.amount,
+            tx.data.nonce,
+            tx.data.chain_id,
+        );
+        let human_readable_bytes = human_readable_msg.as_bytes();
 
-        // Verify that from field matches signer_pubkey
-        if tx.data.from.0 != tx.signer_pubkey {
-            bail!(
-                "from address mismatch: tx.data.from={} but signer_pubkey={}",
-                hex::encode(tx.data.from.0),
-                hex::encode(tx.signer_pubkey)
-            );
+        if verifying_key
+            .verify(human_readable_bytes, &signature)
+            .is_ok()
+        {
+            // Verify that from field matches signer_pubkey
+            if tx.data.from.0 != tx.signer_pubkey {
+                bail!(
+                    "from address mismatch: tx.data.from={} but signer_pubkey={}",
+                    hex::encode(tx.data.from.0),
+                    hex::encode(tx.signer_pubkey)
+                );
+            }
+            return Ok(());
         }
 
-        Ok(())
+        // Fallback to legacy wincode format for backwards compatibility
+        let tx_bytes = wincode::serialize(&tx.data).context("failed to serialize tx data")?;
+        if verifying_key.verify(&tx_bytes, &signature).is_ok() {
+            if tx.data.from.0 != tx.signer_pubkey {
+                bail!(
+                    "from address mismatch: tx.data.from={} but signer_pubkey={}",
+                    hex::encode(tx.data.from.0),
+                    hex::encode(tx.signer_pubkey)
+                );
+            }
+            return Ok(());
+        }
+
+        bail!("signature verification failed: invalid signature for transfer");
     }
 
     /// Verify Ed25519 signature on a withdrawal request.
     ///
-    /// The message signed is the canonical encoding of the withdrawal data:
-    /// from || to_l1_address || amount || nonce
+    /// Supports multiple message formats for backwards compatibility:
+    /// 1. Human-readable text format (new, preferred - works with Phantom/Privy)
+    /// 2. Legacy binary format (original format)
     fn verify_withdraw_signature(withdraw: &WithdrawRequest) -> Result<()> {
-        // Build the message that should have been signed
-        // We use a deterministic encoding: from || to_l1 || amount (le) || nonce (le)
-        let mut msg = Vec::with_capacity(32 + 32 + 8 + 8);
-        msg.extend_from_slice(&withdraw.from.0);
-        msg.extend_from_slice(&withdraw.to_l1_address);
-        msg.extend_from_slice(&withdraw.amount.to_le_bytes());
-        msg.extend_from_slice(&withdraw.nonce.to_le_bytes());
-
         // Parse the public key
         let verifying_key = VerifyingKey::from_bytes(&withdraw.signer_pubkey)
             .map_err(|e| anyhow::anyhow!("invalid signer public key: {}", e))?;
@@ -570,21 +641,49 @@ impl TxRouter {
         let sig_bytes: [u8; 64] = withdraw.signature.as_slice().try_into().unwrap();
         let signature = Signature::from_bytes(&sig_bytes);
 
-        // Verify
-        verifying_key
-            .verify(&msg, &signature)
-            .map_err(|e| anyhow::anyhow!("signature verification failed: {}", e))?;
+        // Try human-readable format first (new, preferred)
+        let human_readable_msg = Self::build_withdraw_message(
+            &withdraw.from.0,
+            &withdraw.to_l1_address,
+            withdraw.amount,
+            withdraw.nonce,
+        );
+        let human_readable_bytes = human_readable_msg.as_bytes();
 
-        // Verify that from field matches signer_pubkey
-        if withdraw.from.0 != withdraw.signer_pubkey {
-            bail!(
-                "from address mismatch: withdraw.from={} but signer_pubkey={}",
-                hex::encode(withdraw.from.0),
-                hex::encode(withdraw.signer_pubkey)
-            );
+        if verifying_key
+            .verify(human_readable_bytes, &signature)
+            .is_ok()
+        {
+            // Verify that from field matches signer_pubkey
+            if withdraw.from.0 != withdraw.signer_pubkey {
+                bail!(
+                    "from address mismatch: withdraw.from={} but signer_pubkey={}",
+                    hex::encode(withdraw.from.0),
+                    hex::encode(withdraw.signer_pubkey)
+                );
+            }
+            return Ok(());
         }
 
-        Ok(())
+        // Fallback to legacy binary format
+        let mut legacy_msg = Vec::with_capacity(32 + 32 + 8 + 8);
+        legacy_msg.extend_from_slice(&withdraw.from.0);
+        legacy_msg.extend_from_slice(&withdraw.to_l1_address);
+        legacy_msg.extend_from_slice(&withdraw.amount.to_le_bytes());
+        legacy_msg.extend_from_slice(&withdraw.nonce.to_le_bytes());
+
+        if verifying_key.verify(&legacy_msg, &signature).is_ok() {
+            if withdraw.from.0 != withdraw.signer_pubkey {
+                bail!(
+                    "from address mismatch: withdraw.from={} but signer_pubkey={}",
+                    hex::encode(withdraw.from.0),
+                    hex::encode(withdraw.signer_pubkey)
+                );
+            }
+            return Ok(());
+        }
+
+        bail!("signature verification failed: invalid signature for withdrawal");
     }
 }
 
@@ -1095,6 +1194,7 @@ mod tests {
             commitment,
             ciphertext: vec![5, 6, 7, 8],
             ephemeral_key: [9u8; 32],
+            nonce: None,
         };
 
         let transactions = vec![TransactionType::Shielded(private_tx)];
@@ -1122,6 +1222,7 @@ mod tests {
             commitment: [2u8; 32],
             ciphertext: vec![5, 6, 7, 8],
             ephemeral_key: [9u8; 32],
+            nonce: None,
         };
 
         let transactions = vec![TransactionType::Shielded(private_tx)];
@@ -1150,6 +1251,7 @@ mod tests {
             commitment: [2u8; 32],
             ciphertext: vec![5, 6, 7, 8],
             ephemeral_key: [9u8; 32],
+            nonce: None,
         };
 
         // Second shielded tx with same nullifier
@@ -1159,6 +1261,7 @@ mod tests {
             commitment: [3u8; 32],
             ciphertext: vec![5, 6, 7, 8],
             ephemeral_key: [10u8; 32],
+            nonce: None,
         };
 
         let transactions = vec![
@@ -1284,6 +1387,7 @@ mod tests {
             commitment: [22u8; 32],
             ciphertext: vec![4, 5, 6],
             ephemeral_key: [33u8; 32],
+            nonce: None,
         };
 
         let transactions = vec![
