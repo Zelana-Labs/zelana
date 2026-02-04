@@ -110,18 +110,53 @@ pub async fn get_account(
     arr.copy_from_slice(&account_bytes);
     let account_id = AccountId(arr);
 
+    // Get finalized state from database
     match state.db.get_account_state(&account_id) {
         Ok(account_state) => {
+            // Also check for pending state in the current batch
+            let (pending_balance, pending_nonce) = {
+                match state
+                    .pipeline_service
+                    .get_pending_account(&account_id)
+                    .await
+                {
+                    Ok(Some(pending_state)) => {
+                        // Only include pending if different from finalized
+                        let pb = if pending_state.balance != account_state.balance {
+                            Some(pending_state.balance)
+                        } else {
+                            None
+                        };
+                        let pn = if pending_state.nonce != account_state.nonce {
+                            Some(pending_state.nonce)
+                        } else {
+                            None
+                        };
+                        (pb, pn)
+                    }
+                    Ok(None) => (None, None),
+                    Err(e) => {
+                        warn!("Failed to get pending account state: {}", e);
+                        (None, None)
+                    }
+                }
+            };
+
             log::debug!(
-                "[GET_ACCOUNT] Account {}: balance={}, nonce={}",
+                "[GET_ACCOUNT] Account {}: balance={}, pending_balance={:?}, nonce={}, pending_nonce={:?}",
                 hex::encode(&account_id.0[..8]),
                 account_state.balance,
-                account_state.nonce
+                pending_balance,
+                account_state.nonce,
+                pending_nonce
             );
+
             Json(AccountStateResponse {
                 account_id: req.account_id,
                 balance: account_state.balance,
+                pending_balance,
                 nonce: account_state.nonce,
+                pending_nonce,
             })
             .into_response()
         }
@@ -210,7 +245,27 @@ pub async fn submit_shielded(
     State(state): State<ApiState>,
     Json(req): Json<SubmitShieldedRequest>,
 ) -> impl IntoResponse {
-    // Build the private transaction
+    // Log shield/unshield operations for debugging
+    if req.shield_from.is_some() {
+        info!(
+            "SHIELD request: from={} amount={:?}",
+            req.shield_from
+                .map(|a| hex::encode(&a[..8]))
+                .unwrap_or_default(),
+            req.shield_amount
+        );
+    }
+    if req.unshield_to.is_some() {
+        info!(
+            "UNSHIELD request: to={} amount={:?}",
+            req.unshield_to
+                .map(|a| hex::encode(&a[..8]))
+                .unwrap_or_default(),
+            req.unshield_amount
+        );
+    }
+
+    // Build the private transaction with shield/unshield hints
     let private_tx = PrivateTransaction {
         proof: req.proof,
         nullifier: req.nullifier,
@@ -218,6 +273,10 @@ pub async fn submit_shielded(
         ciphertext: req.ciphertext,
         ephemeral_key: req.ephemeral_key,
         nonce: req.nonce,
+        shield_from: req.shield_from,
+        shield_amount: req.shield_amount,
+        unshield_to: req.unshield_to,
+        unshield_amount: req.unshield_amount,
     };
 
     let tx = TransactionType::Shielded(private_tx);
@@ -332,6 +391,11 @@ pub async fn submit_delegated_shielded(
         ciphertext: req.ciphertext,
         ephemeral_key: req.ephemeral_key,
         nonce: req.nonce,
+        // Delegated shielded transactions don't use shield/unshield hints
+        shield_from: None,
+        shield_amount: None,
+        unshield_to: None,
+        unshield_amount: None,
     };
 
     let tx = TransactionType::Shielded(private_tx);

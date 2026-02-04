@@ -43,13 +43,13 @@ use crate::sequencer::execution::tx_router::TxResultType;
 use crate::sequencer::settlement::noir_client::{NoirProverClient, NoirProverConfig};
 use crate::sequencer::settlement::prover::compute_batch_hash;
 use crate::sequencer::settlement::prover::{
-    BatchProof, BatchProver, BatchPublicInputs, Groth16Prover, MockProver, build_public_inputs,
-    build_witness,
+    BatchProof, BatchProver, BatchPublicInputs, Groth16Prover, MockProver,
 };
 use crate::sequencer::settlement::settler::{
     MockSettler, SettlementResult, SettlerConfig, SettlerService,
 };
 use crate::sequencer::storage::db::RocksDbStore;
+use zelana_account::{AccountId, AccountState};
 use zelana_transaction::TransactionType;
 
 // Configuration
@@ -170,6 +170,8 @@ pub enum PipelineCommand {
     ForceSeal(oneshot::Sender<Result<SealResult>>),
     /// Get pipeline statistics
     Stats(oneshot::Sender<PipelineStats>),
+    /// Get pending account state
+    GetPendingAccount(AccountId, oneshot::Sender<Option<AccountState>>),
     /// Pause the pipeline
     Pause(String, oneshot::Sender<()>),
     /// Resume the pipeline
@@ -364,28 +366,29 @@ impl PipelineOrchestrator {
     /// Check for and process proving work
     async fn try_prove(&mut self) -> Result<bool> {
         // Skip if already proving or paused
-        if self.proving_batch.is_some() || self.state != PipelineState::Running {
+        if self.proving_batch.is_some() {
+            debug!(
+                "try_prove: skipping - already proving batch {:?}",
+                self.proving_batch
+            );
+            return Ok(false);
+        }
+        if self.state != PipelineState::Running {
+            debug!("try_prove: skipping - state is {:?}", self.state);
             return Ok(false);
         }
 
         let mut manager = self.batch_manager.lock().await;
 
-        // Find next batch ready for proving
-        let batch_to_prove = manager.next_for_proving().map(|b| {
-            let batch_id = b.id;
-            let inputs = build_public_inputs(b, [0u8; 32]); // TODO: withdrawal root
-            let witness = build_witness(b);
-            b.start_proving();
-            (batch_id, inputs, witness)
-        });
-
-        drop(manager);
-
-        let Some((batch_id, inputs_result, witness)) = batch_to_prove else {
+        // Prepare batch for proving - this builds the witness with merkle proofs
+        // and marks the batch as proving
+        let Some((batch_id, inputs, witness)) = manager.prepare_batch_for_proving() else {
             return Ok(false);
         };
 
-        let inputs = inputs_result.context("failed to build public inputs")?;
+        drop(manager);
+
+        let inputs = inputs.context("failed to build public inputs")?;
 
         info!(batch_id, "Starting proof generation");
         self.proving_batch = Some(batch_id);
@@ -818,6 +821,10 @@ impl PipelineService {
                                 let stats = orchestrator.stats().await;
                                 let _ = reply.send(stats);
                             }
+                            PipelineCommand::GetPendingAccount(account_id, reply) => {
+                                let pending = batch_manager.lock().await.get_pending_account(&account_id);
+                                let _ = reply.send(pending);
+                            }
                             PipelineCommand::Pause(reason, reply) => {
                                 orchestrator.pause(reason);
                                 let _ = reply.send(());
@@ -918,6 +925,20 @@ impl PipelineService {
             .await
             .context("pipeline unavailable")?;
         reply_rx.await.context("pipeline crashed")?
+    }
+
+    /// Get pending account state from the current batch.
+    /// Returns None if the account has no pending changes.
+    pub async fn get_pending_account(
+        &self,
+        account_id: &AccountId,
+    ) -> Result<Option<AccountState>> {
+        let (reply_tx, reply_rx) = oneshot::channel();
+        self.command_tx
+            .send(PipelineCommand::GetPendingAccount(*account_id, reply_tx))
+            .await
+            .context("pipeline unavailable")?;
+        Ok(reply_rx.await.context("pipeline crashed")?)
     }
 
     /// Shutdown the pipeline

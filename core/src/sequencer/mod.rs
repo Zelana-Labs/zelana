@@ -8,7 +8,7 @@ pub mod storage;
 pub use storage::db::RocksDbStore;
 pub use storage::shielded_state::ShieldedState;
 
-pub use execution::batch::{Batch, BatchConfig};
+pub use execution::batch::{Batch, BatchConfig, BatchManager};
 pub use execution::tx_router::{PendingWithdrawal, TxResult};
 
 pub use mempool::threshold_mempool::{

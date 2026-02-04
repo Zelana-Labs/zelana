@@ -163,18 +163,27 @@ export class ZelanaClient {
 
   /**
    * Get current balance for the configured keypair
+   * 
+   * Prefers pendingBalance (includes unconfirmed transactions) over finalized balance.
+   * This provides the most up-to-date balance including pending transfers.
    */
   async getBalance(): Promise<bigint> {
     const account = await this.getAccount();
-    return account.balance;
+    // Prefer pending balance for accurate current state
+    return account.pendingBalance ?? account.balance;
   }
 
   /**
    * Get current nonce for the configured keypair
+   * 
+   * Prefers pendingNonce (includes unconfirmed transactions) over finalized nonce.
+   * This ensures rapid successive transactions use correct nonces.
    */
   async getNonce(): Promise<bigint> {
     const account = await this.getAccount();
-    return account.nonce;
+    // Prefer pending nonce for rapid transactions - ensures correct nonce
+    // even when previous transactions haven't settled yet
+    return account.pendingNonce ?? account.nonce;
   }
 
   // ==========================================================================

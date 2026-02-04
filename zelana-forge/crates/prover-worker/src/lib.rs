@@ -10,8 +10,12 @@
 pub mod mimc;
 pub mod prover;
 
+// Re-export ark_bn254::Fr for coordinator
+pub use ark_bn254::Fr;
+
 pub use mimc::{
     MiMC, ShieldedData, TransferData, WithdrawalData, compute_batch_hash, compute_withdrawal_root,
+    field_to_hex, hex_to_field,
 };
 pub use prover::{
     BatchInputs, ChunkInputs, MAX_SHIELDED, MAX_TRANSFERS, MAX_WITHDRAWALS, MERKLE_DEPTH,

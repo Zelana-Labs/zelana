@@ -1,6 +1,6 @@
 {
   "name": "@zelana/sdk",
-  "version": "0.1.3",
+  "version": "0.1.6",
   "description": "TypeScript SDK for Zelana L2",
   "type": "module",
   "main": "dist/index.js",

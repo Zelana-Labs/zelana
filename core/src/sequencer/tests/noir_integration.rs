@@ -271,6 +271,8 @@ async fn test_noir_prover_client_prove_batch() {
         transactions: vec![],
         results: vec![],
         pre_account_states: vec![],
+        transfer_witnesses: vec![],
+        withdrawal_witnesses: vec![],
     };
 
     println!("Submitting batch to prover coordinator at {}", url);

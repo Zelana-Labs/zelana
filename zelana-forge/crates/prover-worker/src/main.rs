@@ -47,7 +47,7 @@ pub struct Args {
     pub worker_id: u32,
 
     /// Port to listen on
-    #[arg(long, default_value = "3001", env = "PORT")]
+    #[arg(long, default_value = "9001", env = "PORT")]
     pub port: u16,
 
     /// Host to bind to
@@ -67,7 +67,7 @@ pub struct Args {
     pub max_concurrent_jobs: usize,
 
     /// Use mock prover (for demo without nargo/sunspot)
-    #[arg(long, default_value = "false", env = "MOCK_PROVER")]
+    #[arg(long, default_value = "false", env = "MOCK_PROVER", action = clap::ArgAction::Set)]
     pub mock_prover: bool,
 
     /// Mock prover delay in milliseconds (simulates proving time)

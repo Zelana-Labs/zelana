@@ -1,6 +1,7 @@
 import { Outlet, NavLink } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../lib/api";
+import { useWebSocketContext } from "../lib/WebSocketProvider";
 import {
   LayoutDashboard,
   Users,
@@ -10,6 +11,8 @@ import {
   Shield,
   ArrowLeftRight,
   Circle,
+  Wifi,
+  WifiOff,
 } from "lucide-react";
 
 const navItems = [
@@ -23,16 +26,21 @@ const navItems = [
 ];
 
 export default function Layout() {
+  const { connected: wsConnected, stats: wsStats } = useWebSocketContext();
+
   const { data: health } = useQuery({
     queryKey: ["health"],
     queryFn: api.getHealth,
-    refetchInterval: 3000,
+    refetchInterval: 5000,
   });
 
-  const { data: stats } = useQuery({
+  // Use WebSocket stats if available, fallback to query
+  const { data: queryStats } = useQuery({
     queryKey: ["stats"],
     queryFn: api.getStats,
   });
+
+  const stats = wsStats || queryStats;
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -58,6 +66,16 @@ export default function Layout() {
 
           {/* Connection status */}
           <div className="flex items-center gap-4">
+            <div className="flex items-center gap-1.5" title={wsConnected ? "Real-time updates active" : "Connecting..."}>
+              {wsConnected ? (
+                <Wifi size={14} className="text-accent-green" />
+              ) : (
+                <WifiOff size={14} className="text-accent-yellow animate-pulse" />
+              )}
+              <span className="text-text-secondary text-xs">
+                {wsConnected ? "Live" : "..."}
+              </span>
+            </div>
             <StatusIndicator
               label="DB"
               connected={health?.dbReader ?? false}

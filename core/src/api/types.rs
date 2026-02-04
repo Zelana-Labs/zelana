@@ -22,6 +22,18 @@ pub struct SubmitShieldedRequest {
     /// Nonce for ChaCha20-Poly1305 encryption (12 bytes)
     #[serde(default)]
     pub nonce: Option<[u8; 12]>,
+    /// For SHIELD operations: L2 account to debit (transparent -> shielded)
+    #[serde(default)]
+    pub shield_from: Option<[u8; 32]>,
+    /// For SHIELD operations: Amount to shield (in lamports)
+    #[serde(default)]
+    pub shield_amount: Option<u64>,
+    /// For UNSHIELD operations: L2 account to credit (shielded -> transparent)
+    #[serde(default)]
+    pub unshield_to: Option<[u8; 32]>,
+    /// For UNSHIELD operations: Amount to unshield (in lamports)
+    #[serde(default)]
+    pub unshield_amount: Option<u64>,
 }
 
 /// Request to submit a delegated shielded transaction (Split Proving)
@@ -130,8 +142,16 @@ pub struct GetAccountRequest {
 #[derive(Debug, Serialize)]
 pub struct AccountStateResponse {
     pub account_id: String,
+    /// Finalized balance (from last settled batch)
     pub balance: u64,
+    /// Pending balance (includes unconfirmed transactions in current batch)
+    /// Will be None if there are no pending changes for this account
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pending_balance: Option<u64>,
     pub nonce: u64,
+    /// Pending nonce (if different from finalized)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pending_nonce: Option<u64>,
 }
 
 // Transfer Operations

@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../lib/api";
+import { useWebSocketContext } from "../lib/WebSocketProvider";
 import { formatNumber, truncateHash, timeAgo, getTxTypeColor } from "../lib/formatters";
 import {
   Users,
@@ -14,13 +15,18 @@ import {
 } from "lucide-react";
 
 export default function Dashboard() {
-  const { data: stats, isLoading: statsLoading } = useQuery({
+  const { stats: wsStats, connected: wsConnected } = useWebSocketContext();
+
+  const { data: queryStats, isLoading: statsLoading } = useQuery({
     queryKey: ["stats"],
     queryFn: api.getStats,
     refetchInterval: 1000,          // 🔥 live updates
     refetchOnWindowFocus: true,     // 🔥 refetch when tab refocuses
     staleTime: 0,
   });
+
+  // Prefer WebSocket stats when connected
+  const stats = wsStats || queryStats;
 
   const { data: transactions } = useQuery({
     queryKey: ["transactions", 0, 10],
@@ -38,7 +44,7 @@ export default function Dashboard() {
     staleTime: 0,
   });
 
-  if (statsLoading) {
+  if (statsLoading && !wsStats) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="text-text-secondary">Loading...</div>

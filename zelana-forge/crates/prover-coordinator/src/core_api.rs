@@ -102,6 +102,7 @@ pub struct CoreShieldedWitness {
     pub output_owner: String,
     pub output_value: u64,
     pub output_blinding: String,
+    pub output_commitment: String, // Pre-computed commitment for pass-through mode
     pub nullifier: String,
 }
 
@@ -904,15 +905,81 @@ async fn is_job_cancelled(state: &SharedCoreApiState, job_id: &str) -> bool {
 /// Convert CoreBatchProveRequest to Noir BatchInputs
 fn convert_to_noir_inputs(request: &CoreBatchProveRequest) -> prover_worker::BatchInputs {
     use prover_worker::{
-        BatchInputs, MERKLE_DEPTH, ShieldedWitness, TransferWitness, WithdrawalWitness,
+        BatchInputs, Fr, MERKLE_DEPTH, MiMC, ShieldedData, ShieldedWitness, TransferData,
+        TransferWitness, WithdrawalData, WithdrawalWitness, compute_batch_hash,
+        compute_withdrawal_root, field_to_hex, hex_to_field,
     };
+
+    // Create MiMC hasher for computing batch_hash and withdrawal_root
+    let mimc = MiMC::new();
+    let batch_id_fr = Fr::from(request.batch_id);
+
+    // Convert transfer data for hashing
+    let transfer_data: Vec<TransferData> = request
+        .transfers
+        .iter()
+        .map(|tx| TransferData {
+            sender_pubkey: hex_to_field(&tx.sender_pubkey).unwrap_or(Fr::from(0u64)),
+            receiver_pubkey: hex_to_field(&tx.receiver_pubkey).unwrap_or(Fr::from(0u64)),
+            amount: Fr::from(tx.amount),
+            sender_nonce: Fr::from(tx.sender_nonce),
+        })
+        .collect();
+
+    // Convert withdrawal data for hashing
+    let withdrawal_data: Vec<WithdrawalData> = request
+        .withdrawals
+        .iter()
+        .map(|wd| WithdrawalData {
+            sender_pubkey: hex_to_field(&wd.sender_pubkey).unwrap_or(Fr::from(0u64)),
+            l1_recipient: hex_to_field(&wd.l1_recipient).unwrap_or(Fr::from(0u64)),
+            amount: Fr::from(wd.amount),
+        })
+        .collect();
+
+    // Convert shielded data for hashing
+    let shielded_data: Vec<ShieldedData> = request
+        .shielded
+        .iter()
+        .map(|sh| ShieldedData {
+            nullifier: hex_to_field(&sh.nullifier).unwrap_or(Fr::from(0u64)),
+            output_commitment: hex_to_field(&sh.output_commitment).unwrap_or(Fr::from(0u64)),
+        })
+        .collect();
+
+    // Compute batch_hash and withdrawal_root using MiMC (matching circuit)
+    let batch_hash = compute_batch_hash(
+        &mimc,
+        batch_id_fr,
+        &transfer_data,
+        &withdrawal_data,
+        &shielded_data,
+    );
+    let withdrawal_root = compute_withdrawal_root(&mimc, batch_id_fr, &withdrawal_data);
+
+    // Convert to hex strings for BatchInputs
+    let batch_hash_hex = field_to_hex(batch_hash);
+    let withdrawal_root_hex = field_to_hex(withdrawal_root);
 
     let mut batch = BatchInputs::empty_batch(
         &request.pre_state_root,
         &request.pre_shielded_root,
         request.batch_id,
-        "0", // Will be computed by circuit
-        "0", // Will be computed by circuit
+        &batch_hash_hex,
+        &withdrawal_root_hex,
+    );
+    let withdrawal_root = compute_withdrawal_root(&mimc, batch_id_fr, &withdrawal_data);
+
+    // Convert to hex strings for BatchInputs
+    let batch_hash_hex = field_to_hex(batch_hash);
+    let withdrawal_root_hex = field_to_hex(withdrawal_root);
+
+    let mut batch = BatchInputs::empty_batch(
+        &request.pre_state_root,
+        &request.pre_shielded_root,
+        request.batch_id,
+        &batch_hash_hex,
+        &withdrawal_root_hex,
     );
 
     batch.post_state_root = request.post_state_root.clone();
@@ -954,7 +1021,7 @@ fn convert_to_noir_inputs(request: &CoreBatchProveRequest) -> prover_worker::Bat
     }
     batch.num_withdrawals = request.withdrawals.len().min(4).to_string();
 
-    // Convert shielded
+    // Convert shielded (with skip_verification = true for pass-through mode)
     for (i, sh) in request.shielded.iter().take(4).enumerate() {
         batch.shielded[i] = ShieldedWitness {
             input_owner: sh.input_commitment.clone(), // Note: field mapping
@@ -967,8 +1034,10 @@ fn convert_to_noir_inputs(request: &CoreBatchProveRequest) -> prover_worker::Bat
             output_owner: sh.output_owner.clone(),
             output_value: sh.output_value.to_string(),
             output_blinding: sh.output_blinding.clone(),
+            output_commitment: sh.output_commitment.clone(),
             nullifier: sh.nullifier.clone(),
             is_valid: true,
+            skip_verification: true, // Pass-through mode: trust user's proof
         };
     }
     batch.num_shielded = request.shielded.len().min(4).to_string();

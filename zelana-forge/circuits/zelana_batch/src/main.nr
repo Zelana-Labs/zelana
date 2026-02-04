@@ -96,11 +96,17 @@ struct ShieldedWitness {
     output_value: Field,
     output_blinding: Field,
     
+    // Pre-computed output commitment (for pass-through mode)
+    output_commitment: Field,
+    
     // Public nullifier (revealed when spending)
     nullifier: Field,
     
     // Flag: is this slot used?
     is_valid: bool,
+    
+    // Flag: skip verification (trust user's proof, just update state)
+    skip_verification: bool,
 }
 
 // ============================================================================
@@ -274,43 +280,56 @@ fn main(
         let sh = shielded[i];
         
         if sh.is_valid {
-            // 1. Compute input commitment
-            let input_commitment = hash_3(
-                sh.input_owner,
-                sh.input_value,
-                sh.input_blinding
-            );
-            
-            // 2. Verify input exists in shielded tree
-            assert(
-                verify_merkle_path(input_commitment, current_shielded_root, sh.input_path, sh.input_path_indices),
-                "Input note not in commitment tree"
-            );
-            
-            // 3. Verify nullifier
-            let computed_nullifier = compute_nullifier(
-                sh.spending_key,
-                input_commitment,
-                sh.input_position
-            );
-            assert(computed_nullifier == sh.nullifier, "Invalid nullifier");
-            
-            // 4. Verify value conservation
-            assert(sh.input_value == sh.output_value, "Shielded value not conserved");
-            
-            // 5. Compute output commitment
-            let output_commitment = hash_3(
-                sh.output_owner,
-                sh.output_value,
-                sh.output_blinding
-            );
-            
-            // 6. Add output commitment to shielded tree
-            // (Simplified: we assume sequential insertion and update root)
-            current_shielded_root = hash_2(current_shielded_root, output_commitment);
-            
-            // 7. Add to batch hash (only reveals nullifier and commitment, not values)
-            batch_accumulator = hash_3(batch_accumulator, sh.nullifier, output_commitment);
+            if sh.skip_verification {
+                // Pass-through mode: Trust the user's ZK proof, just update state
+                // Use the pre-computed output commitment directly
+                let output_commitment = sh.output_commitment;
+                
+                // Update shielded tree root with the new commitment
+                current_shielded_root = hash_2(current_shielded_root, output_commitment);
+                
+                // Add to batch hash (nullifier and commitment are public)
+                batch_accumulator = hash_3(batch_accumulator, sh.nullifier, output_commitment);
+            } else {
+                // Full verification mode
+                // 1. Compute input commitment
+                let input_commitment = hash_3(
+                    sh.input_owner,
+                    sh.input_value,
+                    sh.input_blinding
+                );
+                
+                // 2. Verify input exists in shielded tree
+                assert(
+                    verify_merkle_path(input_commitment, current_shielded_root, sh.input_path, sh.input_path_indices),
+                    "Input note not in commitment tree"
+                );
+                
+                // 3. Verify nullifier
+                let computed_nullifier = compute_nullifier(
+                    sh.spending_key,
+                    input_commitment,
+                    sh.input_position
+                );
+                assert(computed_nullifier == sh.nullifier, "Invalid nullifier");
+                
+                // 4. Verify value conservation
+                assert(sh.input_value == sh.output_value, "Shielded value not conserved");
+                
+                // 5. Compute output commitment
+                let output_commitment = hash_3(
+                    sh.output_owner,
+                    sh.output_value,
+                    sh.output_blinding
+                );
+                
+                // 6. Add output commitment to shielded tree
+                // (Simplified: we assume sequential insertion and update root)
+                current_shielded_root = hash_2(current_shielded_root, output_commitment);
+                
+                // 7. Add to batch hash (only reveals nullifier and commitment, not values)
+                batch_accumulator = hash_3(batch_accumulator, sh.nullifier, output_commitment);
+            }
         }
     }
     
@@ -382,8 +401,10 @@ fn test_empty_batch() {
         output_owner: 0,
         output_value: 0,
         output_blinding: 0,
+        output_commitment: 0,
         nullifier: 0,
         is_valid: false,
+        skip_verification: false,
     };
     
     // For empty batch, all roots stay the same

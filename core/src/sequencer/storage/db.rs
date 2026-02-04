@@ -730,6 +730,30 @@ impl RocksDbStore {
         Ok(())
     }
 
+    /// Get all accounts (for Merkle tree reconstruction on startup)
+    pub fn get_all_accounts(&self) -> Result<Vec<(AccountId, AccountState)>> {
+        let cf = self
+            .db
+            .cf_handle(CF_ACCOUNTS)
+            .context("accounts CF missing")?;
+
+        let mut accounts = Vec::new();
+        let iter = self.db.iterator_cf(cf, rocksdb::IteratorMode::Start);
+
+        for item in iter {
+            let (key, value) = item?;
+            if key.len() == 32 {
+                let mut id_bytes = [0u8; 32];
+                id_bytes.copy_from_slice(&key);
+                let id = AccountId(id_bytes);
+                let state: AccountState = wincode::deserialize(&value)?;
+                accounts.push((id, state));
+            }
+        }
+
+        Ok(accounts)
+    }
+
     // =========================================================================
     // Batch Query Methods
     // =========================================================================

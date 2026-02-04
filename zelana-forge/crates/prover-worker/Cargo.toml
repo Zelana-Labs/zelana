@@ -42,6 +42,7 @@ hex.workspace = true
 thiserror.workspace = true
 uuid = { version = "1", features = ["v4"] }
 sha2.workspace = true
+num-bigint = "0.4"
 
 # Arkworks for MiMC hash computation
 ark-bn254.workspace = true

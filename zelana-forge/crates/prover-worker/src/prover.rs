@@ -4,12 +4,79 @@
 //! Updated to support the zelana_batch circuit with 8 transfers, 4 withdrawals,
 //! and 4 shielded transactions.
 
+use num_bigint::BigUint;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::process::Stdio;
 use thiserror::Error;
 use tokio::process::Command;
 use tracing::{debug, error, info};
+
+// ============================================================================
+// Hex to Decimal Conversion for Noir
+// ============================================================================
+
+/// BN254 scalar field modulus (Fr)
+/// This is the order of the scalar field used by Groth16 on BN254
+const BN254_FR_MODULUS: &str =
+    "21888242871839275222246405745257275088548364400416034343698204186575808495617";
+
+/// Convert a hex string (with or without 0x prefix) to a decimal string.
+/// Noir/nargo expects Field values as decimal integers, not hex.
+/// Values are reduced modulo the BN254 scalar field modulus.
+///
+/// If the input is already a decimal (or "0"), returns as-is.
+/// If the input is 64 hex chars (32 bytes), converts to decimal and reduces mod p.
+fn hex_to_decimal_field(s: &str) -> String {
+    // Handle empty or zero
+    if s.is_empty() || s == "0" {
+        return "0".to_string();
+    }
+
+    // Strip 0x prefix if present
+    let hex_str = s.strip_prefix("0x").unwrap_or(s);
+
+    // Handle 128-char hex strings (64 bytes, e.g., Ed25519 signatures)
+    // Take first 32 bytes since Noir field can only hold 32 bytes
+    // TODO: Revisit for proper signature verification - currently circuit only checks signature != 0
+    if hex_str.len() == 128 && hex_str.chars().all(|c| c.is_ascii_hexdigit()) {
+        let first_half = &hex_str[0..64];
+        match hex::decode(first_half) {
+            Ok(bytes) => {
+                let big_int = BigUint::from_bytes_be(&bytes);
+                let modulus = BigUint::parse_bytes(BN254_FR_MODULUS.as_bytes(), 10)
+                    .expect("Invalid modulus constant");
+                let reduced = big_int % modulus;
+                return reduced.to_string();
+            }
+            Err(_) => return s.to_string(),
+        }
+    }
+
+    // Check if it looks like hex (64 chars = 32 bytes, all hex digits)
+    if hex_str.len() == 64 && hex_str.chars().all(|c| c.is_ascii_hexdigit()) {
+        // Parse as big-endian hex bytes and convert to decimal
+        match hex::decode(hex_str) {
+            Ok(bytes) => {
+                let big_int = BigUint::from_bytes_be(&bytes);
+                // Reduce modulo BN254 scalar field to ensure value is valid for Noir
+                let modulus = BigUint::parse_bytes(BN254_FR_MODULUS.as_bytes(), 10)
+                    .expect("Invalid modulus constant");
+                let reduced = big_int % modulus;
+                reduced.to_string()
+            }
+            Err(_) => s.to_string(), // Fallback: return original
+        }
+    } else {
+        // Already decimal or other format, return as-is
+        s.to_string()
+    }
+}
+
+/// Convert an array of strings, applying hex_to_decimal_field to each element
+fn normalize_array(arr: &[String; MERKLE_DEPTH]) -> [String; MERKLE_DEPTH] {
+    std::array::from_fn(|i| hex_to_decimal_field(&arr[i]))
+}
 
 // ============================================================================
 // Errors
@@ -138,8 +205,10 @@ pub struct ShieldedWitness {
     pub output_owner: String,
     pub output_value: String,
     pub output_blinding: String,
+    pub output_commitment: String,
     pub nullifier: String,
     pub is_valid: bool,
+    pub skip_verification: bool,
 }
 
 impl Default for ShieldedWitness {
@@ -155,8 +224,10 @@ impl Default for ShieldedWitness {
             output_owner: "0".to_string(),
             output_value: "0".to_string(),
             output_blinding: "0".to_string(),
+            output_commitment: "0".to_string(),
             nullifier: "0".to_string(),
             is_valid: false,
+            skip_verification: false,
         }
     }
 }
@@ -230,6 +301,50 @@ impl BatchInputs {
         }
         while self.shielded.len() < MAX_SHIELDED {
             self.shielded.push(ShieldedWitness::default());
+        }
+    }
+
+    /// Normalize all field values for Noir circuit consumption.
+    /// Converts hex strings (32-byte/64-char) to decimal strings.
+    /// Noir/nargo expects Field values as decimal integers, not hex.
+    pub fn normalize_for_noir(&mut self) {
+        // Convert public input roots
+        self.pre_state_root = hex_to_decimal_field(&self.pre_state_root);
+        self.post_state_root = hex_to_decimal_field(&self.post_state_root);
+        self.pre_shielded_root = hex_to_decimal_field(&self.pre_shielded_root);
+        self.post_shielded_root = hex_to_decimal_field(&self.post_shielded_root);
+        self.withdrawal_root = hex_to_decimal_field(&self.withdrawal_root);
+        self.batch_hash = hex_to_decimal_field(&self.batch_hash);
+        // batch_id is already numeric
+
+        // Normalize transfer witnesses
+        for tx in &mut self.transfers {
+            tx.sender_pubkey = hex_to_decimal_field(&tx.sender_pubkey);
+            tx.receiver_pubkey = hex_to_decimal_field(&tx.receiver_pubkey);
+            tx.signature = hex_to_decimal_field(&tx.signature);
+            tx.sender_path = normalize_array(&tx.sender_path);
+            tx.receiver_path = normalize_array(&tx.receiver_path);
+            // sender_path_indices and receiver_path_indices are 0/1 values, leave as-is
+        }
+
+        // Normalize withdrawal witnesses
+        for wd in &mut self.withdrawals {
+            wd.sender_pubkey = hex_to_decimal_field(&wd.sender_pubkey);
+            wd.l1_recipient = hex_to_decimal_field(&wd.l1_recipient);
+            wd.signature = hex_to_decimal_field(&wd.signature);
+            wd.sender_path = normalize_array(&wd.sender_path);
+        }
+
+        // Normalize shielded witnesses
+        for sh in &mut self.shielded {
+            sh.input_owner = hex_to_decimal_field(&sh.input_owner);
+            sh.input_blinding = hex_to_decimal_field(&sh.input_blinding);
+            sh.spending_key = hex_to_decimal_field(&sh.spending_key);
+            sh.output_owner = hex_to_decimal_field(&sh.output_owner);
+            sh.output_blinding = hex_to_decimal_field(&sh.output_blinding);
+            sh.nullifier = hex_to_decimal_field(&sh.nullifier);
+            sh.output_commitment = hex_to_decimal_field(&sh.output_commitment);
+            sh.input_path = normalize_array(&sh.input_path);
         }
     }
 }
@@ -346,6 +461,8 @@ pub struct NoirProver {
 impl NoirProver {
     /// Create a new prover for the given circuit path
     pub fn new(circuit_path: PathBuf) -> Self {
+        // Canonicalize to absolute path to avoid working directory issues
+        let circuit_path = circuit_path.canonicalize().unwrap_or(circuit_path);
         Self { circuit_path }
     }
 
@@ -364,9 +481,14 @@ impl NoirProver {
             inputs.batch_id, inputs.num_transfers, inputs.num_withdrawals, inputs.num_shielded
         );
 
+        // Step 0: Normalize inputs - convert hex strings to decimal for Noir
+        let mut normalized_inputs = inputs;
+        normalized_inputs.normalize_for_noir();
+        debug!("Normalized inputs for Noir (hex -> decimal conversion applied)");
+
         // Step 1: Write Prover.toml
         let prover_toml_path = self.circuit_path.join("Prover.toml");
-        let toml_content = toml::to_string_pretty(&inputs)?;
+        let toml_content = toml::to_string_pretty(&normalized_inputs)?;
 
         debug!("Writing Prover.toml ({} bytes)", toml_content.len());
         tokio::fs::write(&prover_toml_path, &toml_content).await?;

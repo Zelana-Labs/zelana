@@ -7,7 +7,7 @@ import {
   formatBalance,
   copyToClipboard,
 } from "../lib/formatters";
-import { Copy, Check, Filter } from "lucide-react";
+import { Copy, Check, Filter, ExternalLink } from "lucide-react";
 
 const TX_TYPES = ["all", "deposit", "transfer", "shielded", "withdrawal"];
 const STATUSES = ["all", "pending", "included", "executed", "settled", "failed"];
@@ -135,6 +135,13 @@ export default function Transactions() {
 function TxRow({ tx }: { tx: Transaction }) {
   const [copied, setCopied] = useState(false);
 
+  // Fetch batch info if transaction is settled to get the L1 signature
+  const { data: batch } = useQuery({
+    queryKey: ["batch", tx.batch_id],
+    queryFn: () => (tx.batch_id !== undefined ? api.getBatch(tx.batch_id) : null),
+    enabled: tx.batch_id !== undefined && tx.status === "settled",
+  });
+
   const handleCopy = async () => {
     await copyToClipboard(tx.tx_hash);
     setCopied(true);
@@ -173,16 +180,29 @@ function TxRow({ tx }: { tx: Transaction }) {
       </td>
       <td>
         {tx.batch_id !== undefined ? (
-          <span className="text-accent-purple">#{tx.batch_id}</span>
+          <div className="flex items-center gap-1">
+            <span className="text-accent-purple">#{tx.batch_id}</span>
+            {batch?.l1_tx_sig && (
+              <a
+                href={`https://explorer.solana.com/tx/${batch.l1_tx_sig}?cluster=devnet`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-accent-cyan hover:text-accent-green transition-colors"
+                title="View on Solana Explorer"
+              >
+                <ExternalLink size={12} />
+              </a>
+            )}
+          </div>
         ) : (
-          <span className="text-text-muted">—</span>
+          <span className="text-text-muted">-</span>
         )}
       </td>
       <td className="text-right font-mono text-sm">
         {tx.amount !== undefined ? (
           formatBalance(tx.amount)
         ) : (
-          <span className="text-text-muted">—</span>
+          <span className="text-text-muted">-</span>
         )}
       </td>
       <td className="text-text-secondary text-sm">{timeAgo(tx.received_at)}</td>

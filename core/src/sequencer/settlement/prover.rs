@@ -82,8 +82,12 @@ pub struct BatchWitness {
     pub transactions: Vec<TransactionType>,
     /// Execution results
     pub results: Vec<TxResult>,
-    /// Account state before each transaction
+    /// Account state before each transaction (legacy, for backward compat)
     pub pre_account_states: Vec<AccountStateSnapshot>,
+    /// Per-transfer witness data with correct intermediate merkle paths
+    pub transfer_witnesses: Vec<TransferWitnessData>,
+    /// Per-withdrawal witness data
+    pub withdrawal_witnesses: Vec<WithdrawalWitnessData>,
 }
 
 /// Snapshot of account state for witness
@@ -92,7 +96,64 @@ pub struct AccountStateSnapshot {
     pub account_id: [u8; 32],
     pub balance: u64,
     pub nonce: u64,
+    /// Merkle proof siblings (32 hashes for 32-level tree)
     pub merkle_proof: Vec<[u8; 32]>,
+    /// Path indices (0 = left, 1 = right) for each level
+    pub path_indices: Vec<u8>,
+    /// Position in the tree (leaf index)
+    pub position: u64,
+}
+
+/// Per-transfer witness with correct intermediate merkle paths
+/// Sender path is against state BEFORE sender update
+/// Receiver path is against state AFTER sender update
+#[derive(Debug, Clone)]
+pub struct TransferWitnessData {
+    /// Sender pubkey
+    pub sender_pubkey: [u8; 32],
+    /// Sender balance before transfer
+    pub sender_balance: u64,
+    /// Sender nonce before transfer
+    pub sender_nonce: u64,
+    /// Sender merkle path (valid against state before this transfer)
+    pub sender_merkle_path: Vec<[u8; 32]>,
+    /// Sender path indices
+    pub sender_path_indices: Vec<u8>,
+    /// Receiver pubkey
+    pub receiver_pubkey: [u8; 32],
+    /// Receiver balance before transfer (after sender update)
+    pub receiver_balance: u64,
+    /// Receiver nonce before transfer
+    pub receiver_nonce: u64,
+    /// Receiver merkle path (valid against state AFTER sender update)
+    pub receiver_merkle_path: Vec<[u8; 32]>,
+    /// Receiver path indices
+    pub receiver_path_indices: Vec<u8>,
+    /// Transfer amount
+    pub amount: u64,
+    /// Transaction signature
+    pub signature: Vec<u8>,
+}
+
+/// Per-withdrawal witness data
+#[derive(Debug, Clone)]
+pub struct WithdrawalWitnessData {
+    /// Sender pubkey
+    pub sender_pubkey: [u8; 32],
+    /// Sender balance before withdrawal
+    pub sender_balance: u64,
+    /// Sender nonce before withdrawal
+    pub sender_nonce: u64,
+    /// Sender merkle path
+    pub sender_merkle_path: Vec<[u8; 32]>,
+    /// Sender path indices
+    pub sender_path_indices: Vec<u8>,
+    /// L1 recipient address
+    pub l1_recipient: [u8; 32],
+    /// Withdrawal amount
+    pub amount: u64,
+    /// Transaction signature
+    pub signature: Vec<u8>,
 }
 
 // ============================================================================
@@ -514,6 +575,225 @@ pub fn build_witness(batch: &Batch) -> BatchWitness {
         transactions: batch.transactions.clone(),
         results: batch.results.clone(),
         pre_account_states: Vec::new(), // MVP: Skip account proofs
+        transfer_witnesses: Vec::new(),
+        withdrawal_witnesses: Vec::new(),
+    }
+}
+
+/// Build a full witness with merkle proofs from the account tree
+///
+/// IMPORTANT: For transfers, the circuit processes sender and receiver sequentially:
+/// 1. Verify sender merkle path against current_state_root
+/// 2. Update sender -> current_state_root changes
+/// 3. Verify receiver merkle path against NEW current_state_root
+/// 4. Update receiver -> current_state_root changes
+///
+/// Therefore, we must compute receiver paths AFTER simulating the sender update.
+pub fn build_witness_with_proofs(
+    batch: &Batch,
+    account_tree: &crate::sequencer::storage::account_tree::AccountTree,
+    db: &crate::sequencer::storage::db::RocksDbStore,
+) -> BatchWitness {
+    use crate::storage::StateStore;
+    use zelana_account::{AccountId, AccountState};
+
+    // Clone the tree so we can simulate state updates
+    let mut sim_tree = account_tree.clone();
+
+    // Track current account states (simulated)
+    let mut account_states: std::collections::HashMap<AccountId, AccountState> =
+        std::collections::HashMap::new();
+
+    // Pre-populate with current DB states for all accounts we'll touch
+    for tx in &batch.transactions {
+        match tx {
+            TransactionType::Transfer(t) => {
+                let sender_id = AccountId(t.signer_pubkey);
+                let receiver_id = t.data.to;
+                if !account_states.contains_key(&sender_id) {
+                    account_states.insert(
+                        sender_id,
+                        db.get_account_state(&sender_id).unwrap_or_default(),
+                    );
+                }
+                if !account_states.contains_key(&receiver_id) {
+                    account_states.insert(
+                        receiver_id,
+                        db.get_account_state(&receiver_id).unwrap_or_default(),
+                    );
+                }
+            }
+            TransactionType::Withdraw(w) => {
+                let sender_id = w.from;
+                if !account_states.contains_key(&sender_id) {
+                    account_states.insert(
+                        sender_id,
+                        db.get_account_state(&sender_id).unwrap_or_default(),
+                    );
+                }
+            }
+            TransactionType::Deposit(d) => {
+                let to_id = d.to;
+                if !account_states.contains_key(&to_id) {
+                    account_states.insert(to_id, db.get_account_state(&to_id).unwrap_or_default());
+                }
+            }
+            TransactionType::Shielded(_) => {}
+        }
+    }
+
+    let mut transfer_witnesses = Vec::new();
+    let mut withdrawal_witnesses = Vec::new();
+    let mut pre_account_states = Vec::new(); // Keep for backward compat
+    let mut seen_accounts = std::collections::HashSet::new();
+
+    for tx in &batch.transactions {
+        match tx {
+            TransactionType::Transfer(t) => {
+                let sender_id = AccountId(t.signer_pubkey);
+                let receiver_id = t.data.to;
+                let amount = t.data.amount;
+
+                // Get sender's current state and merkle path BEFORE sender update
+                let sender_state = account_states.get(&sender_id).cloned().unwrap_or_default();
+                let sender_path = sim_tree.path(&sender_id).unwrap_or_default();
+
+                // Simulate sender update in the tree
+                let new_sender_state = AccountState {
+                    balance: sender_state.balance.saturating_sub(amount),
+                    nonce: sender_state.nonce + 1,
+                };
+                sim_tree.insert(&sender_id, &new_sender_state);
+                account_states.insert(sender_id, new_sender_state);
+
+                // Now get receiver's merkle path AFTER sender update
+                let receiver_state = account_states
+                    .get(&receiver_id)
+                    .cloned()
+                    .unwrap_or_default();
+                let receiver_path = sim_tree.path(&receiver_id).unwrap_or_else(|| {
+                    // Receiver doesn't exist yet - insert with current balance first
+                    sim_tree.insert(&receiver_id, &receiver_state);
+                    sim_tree.path(&receiver_id).unwrap_or_default()
+                });
+
+                // Simulate receiver update in the tree
+                let new_receiver_state = AccountState {
+                    balance: receiver_state.balance + amount,
+                    nonce: receiver_state.nonce,
+                };
+                sim_tree.insert(&receiver_id, &new_receiver_state);
+                account_states.insert(receiver_id, new_receiver_state);
+
+                // Create the transfer witness with correct paths
+                transfer_witnesses.push(TransferWitnessData {
+                    sender_pubkey: t.signer_pubkey,
+                    sender_balance: sender_state.balance,
+                    sender_nonce: sender_state.nonce,
+                    sender_merkle_path: sender_path.siblings.to_vec(),
+                    sender_path_indices: sender_path.path_indices.to_vec(),
+                    receiver_pubkey: receiver_id.0,
+                    receiver_balance: receiver_state.balance,
+                    receiver_nonce: receiver_state.nonce,
+                    receiver_merkle_path: receiver_path.siblings.to_vec(),
+                    receiver_path_indices: receiver_path.path_indices.to_vec(),
+                    amount,
+                    signature: t.signature.clone(),
+                });
+
+                // Also populate legacy pre_account_states for backward compat
+                if seen_accounts.insert(sender_id) {
+                    pre_account_states.push(AccountStateSnapshot {
+                        account_id: sender_id.0,
+                        balance: sender_state.balance,
+                        nonce: sender_state.nonce,
+                        merkle_proof: sender_path.siblings.to_vec(),
+                        path_indices: sender_path.path_indices.to_vec(),
+                        position: sender_path.position,
+                    });
+                }
+                if seen_accounts.insert(receiver_id) {
+                    pre_account_states.push(AccountStateSnapshot {
+                        account_id: receiver_id.0,
+                        balance: receiver_state.balance,
+                        nonce: receiver_state.nonce,
+                        merkle_proof: receiver_path.siblings.to_vec(),
+                        path_indices: receiver_path.path_indices.to_vec(),
+                        position: receiver_path.position,
+                    });
+                }
+            }
+            TransactionType::Withdraw(w) => {
+                let sender_id = w.from;
+                let amount = w.amount;
+
+                // Get sender's current state and merkle path
+                let sender_state = account_states.get(&sender_id).cloned().unwrap_or_default();
+                let sender_path = sim_tree.path(&sender_id).unwrap_or_default();
+
+                // Simulate sender update in the tree
+                let new_sender_state = AccountState {
+                    balance: sender_state.balance.saturating_sub(amount),
+                    nonce: sender_state.nonce + 1,
+                };
+                sim_tree.insert(&sender_id, &new_sender_state);
+                account_states.insert(sender_id, new_sender_state);
+
+                withdrawal_witnesses.push(WithdrawalWitnessData {
+                    sender_pubkey: sender_id.0,
+                    sender_balance: sender_state.balance,
+                    sender_nonce: sender_state.nonce,
+                    sender_merkle_path: sender_path.siblings.to_vec(),
+                    sender_path_indices: sender_path.path_indices.to_vec(),
+                    l1_recipient: w.to_l1_address,
+                    amount,
+                    signature: w.signature.clone(),
+                });
+
+                if seen_accounts.insert(sender_id) {
+                    pre_account_states.push(AccountStateSnapshot {
+                        account_id: sender_id.0,
+                        balance: sender_state.balance,
+                        nonce: sender_state.nonce,
+                        merkle_proof: sender_path.siblings.to_vec(),
+                        path_indices: sender_path.path_indices.to_vec(),
+                        position: sender_path.position,
+                    });
+                }
+            }
+            TransactionType::Deposit(d) => {
+                // IMPORTANT: The Noir circuit does NOT process deposits for transparent state root.
+                // We only record the pre-state snapshot but do NOT update sim_tree or account_states.
+                // This ensures merkle paths match what the circuit expects.
+                let to_id = d.to;
+
+                if seen_accounts.insert(to_id) {
+                    if let Some(path) = sim_tree.path(&to_id) {
+                        let state = account_states.get(&to_id).cloned().unwrap_or_default();
+                        pre_account_states.push(AccountStateSnapshot {
+                            account_id: to_id.0,
+                            balance: state.balance,
+                            nonce: state.nonce,
+                            merkle_proof: path.siblings.to_vec(),
+                            path_indices: path.path_indices.to_vec(),
+                            position: path.position,
+                        });
+                    }
+                }
+                // DO NOT simulate deposit update here - circuit skips deposits for state root
+            }
+            TransactionType::Shielded(_) => {
+                // Shielded transactions use the commitment tree, not account tree
+            }
+        }
+    }
+
+    BatchWitness {
+        transactions: batch.transactions.clone(),
+        results: batch.results.clone(),
+        pre_account_states,
+        transfer_witnesses,
+        withdrawal_witnesses,
     }
 }
 
@@ -539,6 +819,8 @@ mod tests {
             transactions: vec![],
             results: vec![],
             pre_account_states: vec![],
+            transfer_witnesses: vec![],
+            withdrawal_witnesses: vec![],
         };
 
         let proof = prover.prove(&inputs, &witness).unwrap();

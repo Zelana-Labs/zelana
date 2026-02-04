@@ -4,7 +4,7 @@ version: '3.8'
 # 
 # This docker-compose runs:
 # - 1 Coordinator (Brain) on port 8080
-# - 4 Workers (Muscle) on ports 3001-3004
+# - 4 Workers (Muscle) on ports 9001-9004
 #
 # Usage:
 #   docker-compose up -d
@@ -21,7 +21,7 @@ services:
     environment:
       - PORT=8080
       - HOST=0.0.0.0
-      - WORKERS=http://worker1:3001,http://worker2:3002,http://worker3:3003,http://worker4:3004
+      - WORKERS=http://worker1:9001,http://worker2:9002,http://worker3:9003,http://worker4:9004
       - CHUNK_SIZE=25
       - PROOF_TIMEOUT_MS=300000
       - MOCK_SETTLEMENT=true
@@ -41,10 +41,10 @@ services:
       dockerfile: Dockerfile.worker
     container_name: zelana-worker-1
     ports:
-      - "3001:3001"
+      - "9001:9001"
     environment:
       - WORKER_ID=1
-      - PORT=3001
+      - PORT=9001
       - HOST=0.0.0.0
       - MAX_CONCURRENT_JOBS=2
       - MOCK_PROVER=true
@@ -62,10 +62,10 @@ services:
       dockerfile: Dockerfile.worker
     container_name: zelana-worker-2
     ports:
-      - "3002:3002"
+      - "9002:9002"
     environment:
       - WORKER_ID=2
-      - PORT=3002
+      - PORT=9002
       - HOST=0.0.0.0
       - MAX_CONCURRENT_JOBS=2
       - MOCK_PROVER=true
@@ -83,10 +83,10 @@ services:
       dockerfile: Dockerfile.worker
     container_name: zelana-worker-3
     ports:
-      - "3003:3003"
+      - "9003:9003"
     environment:
       - WORKER_ID=3
-      - PORT=3003
+      - PORT=9003
       - HOST=0.0.0.0
       - MAX_CONCURRENT_JOBS=2
       - MOCK_PROVER=true
@@ -104,10 +104,10 @@ services:
       dockerfile: Dockerfile.worker
     container_name: zelana-worker-4
     ports:
-      - "3004:3004"
+      - "9004:9004"
     environment:
       - WORKER_ID=4
-      - PORT=3004
+      - PORT=9004
       - HOST=0.0.0.0
       - MAX_CONCURRENT_JOBS=2
       - MOCK_PROVER=true

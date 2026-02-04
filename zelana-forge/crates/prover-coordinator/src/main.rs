@@ -43,6 +43,7 @@
 
 mod core_api;
 mod dispatcher;
+mod ownership_api;
 mod settler;
 mod solana_client;
 
@@ -55,6 +56,9 @@ use axum::{
 use clap::Parser;
 use core_api::{CoreApiConfig, CoreApiState, SharedCoreApiState, core_api_router};
 use dispatcher::{Batch, BatchProofs, Dispatcher, DispatcherConfig};
+use ownership_api::{
+    OwnershipProverConfig, OwnershipProverState, SharedOwnershipState, ownership_api_router,
+};
 use serde::{Deserialize, Serialize};
 use settler::{BatchSettlement, MockSettler, SettlementMode, Settler, SettlerConfig};
 use std::{collections::HashMap, sync::Arc, time::Instant};
@@ -83,7 +87,7 @@ struct Args {
     #[arg(
         long,
         value_delimiter = ',',
-        default_value = "http://localhost:3001,http://localhost:3002,http://localhost:3003,http://localhost:3004",
+        default_value = "http://localhost:9001,http://localhost:9002,http://localhost:9003,http://localhost:9004",
         env = "WORKERS"
     )]
     workers: Vec<String>,
@@ -113,7 +117,7 @@ struct Args {
     program_id: String,
 
     /// Use mock settlement (for demo without Solana)
-    #[arg(long, default_value = "true", env = "MOCK_SETTLEMENT")]
+    #[arg(long, default_value = "true", env = "MOCK_SETTLEMENT", action = clap::ArgAction::Set)]
     mock_settlement: bool,
 
     /// Path to keypair file for Solana transactions
@@ -130,11 +134,11 @@ struct Args {
 
     // === Core API Configuration ===
     /// Enable Core API endpoints (/v2/batch/prove etc.)
-    #[arg(long, default_value = "true", env = "ENABLE_CORE_API")]
+    #[arg(long, default_value = "true", env = "ENABLE_CORE_API", action = clap::ArgAction::Set)]
     enable_core_api: bool,
 
     /// Use mock prover for Core API (for testing without nargo/sunspot)
-    #[arg(long, default_value = "true", env = "MOCK_PROVER")]
+    #[arg(long, default_value = "false", env = "MOCK_PROVER", action = clap::ArgAction::Set)]
     mock_prover: bool,
 
     /// Mock prover delay in milliseconds
@@ -148,6 +152,20 @@ struct Args {
     /// Maximum concurrent proving jobs
     #[arg(long, default_value = "4", env = "MAX_CONCURRENT_JOBS")]
     max_concurrent_jobs: usize,
+
+    // === Ownership Prover Configuration ===
+    /// Path to ownership circuit directory
+    #[arg(long, env = "OWNERSHIP_CIRCUIT_PATH")]
+    ownership_circuit_path: Option<String>,
+
+    /// Use mock ownership prover (for testing without nargo/sunspot)
+    #[arg(long, default_value = "false", env = "MOCK_OWNERSHIP_PROVER", action = clap::ArgAction::Set)]
+    mock_ownership_prover: bool,
+
+    /// Core API only mode - disables parallel swarm worker health checks
+    /// Use this when running coordinator purely for Core API (sequencer integration)
+    #[arg(long, default_value = "false", env = "CORE_API_ONLY", action = clap::ArgAction::Set)]
+    core_api_only: bool,
 }
 
 // ============================================================================
@@ -280,31 +298,37 @@ async fn main() -> anyhow::Result<()> {
         "Starting Parallel Swarm Coordinator on {}:{}",
         args.host, args.port
     );
-    info!("Workers: {:?}", args.workers);
-    info!("Chunk size: {} txs", args.chunk_size);
+    info!("Core API only mode: {}", args.core_api_only);
+    if !args.core_api_only {
+        info!("Workers: {:?}", args.workers);
+        info!("Chunk size: {} txs", args.chunk_size);
+    }
     info!("Mock settlement: {}", args.mock_settlement);
     info!("Core API enabled: {}", args.enable_core_api);
     info!("Mock prover: {}", args.mock_prover);
 
-    // Initialize state
-    let workers: HashMap<String, WorkerStatus> = args
-        .workers
-        .iter()
-        .map(|url| {
-            (
-                url.clone(),
-                WorkerStatus {
-                    url: url.clone(),
-                    worker_id: None,
-                    ready: false,
-                    active_jobs: 0,
-                    total_proofs: 0,
-                    avg_proving_time_ms: 0,
-                    last_health_check: 0,
-                },
-            )
-        })
-        .collect();
+    // Initialize state (workers only used in swarm mode)
+    let workers: HashMap<String, WorkerStatus> = if args.core_api_only {
+        HashMap::new() // No workers in core-api-only mode
+    } else {
+        args.workers
+            .iter()
+            .map(|url| {
+                (
+                    url.clone(),
+                    WorkerStatus {
+                        url: url.clone(),
+                        worker_id: None,
+                        ready: false,
+                        active_jobs: 0,
+                        total_proofs: 0,
+                        avg_proving_time_ms: 0,
+                        last_health_check: 0,
+                    },
+                )
+            })
+            .collect()
+    };
 
     let state = Arc::new(RwLock::new(CoordinatorState {
         config: args.clone(),
@@ -313,14 +337,16 @@ async fn main() -> anyhow::Result<()> {
         client: reqwest::Client::new(),
     }));
 
-    // Spawn background task to check worker health
-    let health_state = state.clone();
-    tokio::spawn(async move {
-        loop {
-            check_worker_health(health_state.clone()).await;
-            tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
-        }
-    });
+    // Spawn background task to check worker health (only in swarm mode)
+    if !args.core_api_only {
+        let health_state = state.clone();
+        tokio::spawn(async move {
+            loop {
+                check_worker_health(health_state.clone()).await;
+                tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
+            }
+        });
+    }
 
     // Build router with CORS for dashboard
     let cors = CorsLayer::new()
@@ -341,11 +367,19 @@ async fn main() -> anyhow::Result<()> {
     // Create the final app, optionally merging Core API
     let app = if args.enable_core_api {
         // Create Core API state
+        // Canonicalize to absolute path to avoid working directory issues with nargo/sunspot
         let circuit_path = args
             .circuit_target_path
             .as_ref()
             .map(|p| std::path::PathBuf::from(p))
-            .unwrap_or_else(|| std::path::PathBuf::from("../../circuits/zelana_batch"));
+            .unwrap_or_else(|| std::path::PathBuf::from("circuits/zelana_batch"));
+        let circuit_path = circuit_path.canonicalize().unwrap_or_else(|_| {
+            // If canonicalize fails (path doesn't exist yet), make it absolute relative to cwd
+            std::env::current_dir()
+                .map(|cwd| cwd.join(&circuit_path))
+                .unwrap_or(circuit_path)
+        });
+        info!("Circuit path (absolute): {:?}", circuit_path);
 
         let core_api_config = CoreApiConfig {
             circuit_path,
@@ -363,9 +397,42 @@ async fn main() -> anyhow::Result<()> {
             args.max_concurrent_jobs, args.proof_cache_ttl_secs
         );
 
+        // Create Ownership API state
+        // Canonicalize to absolute path to avoid working directory issues with nargo/sunspot
+        let ownership_circuit_path = args
+            .ownership_circuit_path
+            .as_ref()
+            .map(|p| std::path::PathBuf::from(p))
+            .unwrap_or_else(|| std::path::PathBuf::from("circuits/ownership"));
+        let ownership_circuit_path = ownership_circuit_path.canonicalize().unwrap_or_else(|_| {
+            std::env::current_dir()
+                .map(|cwd| cwd.join(&ownership_circuit_path))
+                .unwrap_or(ownership_circuit_path)
+        });
+        info!(
+            "Ownership circuit path (absolute): {:?}",
+            ownership_circuit_path
+        );
+
+        let ownership_config = OwnershipProverConfig {
+            circuit_path: ownership_circuit_path.clone(),
+            mock_prover: args.mock_ownership_prover,
+            mock_delay_ms: 100,
+        };
+
+        let ownership_state: SharedOwnershipState = Arc::new(tokio::sync::RwLock::new(
+            OwnershipProverState::new(ownership_config),
+        ));
+
+        info!(
+            "Ownership API enabled with circuit path: {:?}, mock: {}",
+            ownership_circuit_path, args.mock_ownership_prover
+        );
+
         // Merge routers
         swarm_router
             .merge(core_api_router(core_api_state))
+            .merge(ownership_api_router(ownership_state))
             .layer(cors)
             .layer(TraceLayer::new_for_http())
     } else {

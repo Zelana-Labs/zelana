@@ -127,9 +127,10 @@ impl MiMC {
         self.sponge_absorb(&[domain, a, b, c, d, e, f], Fr::from(0u64))
     }
 
-    /// Compute account leaf: hash_3(pubkey, balance, nonce)
+    /// Compute account leaf: hash_4(domain_account, pubkey, balance, nonce)
+    /// Matches circuit's compute_account_leaf: hash_4(domain_account(), pubkey, balance, nonce)
     pub fn compute_account_leaf(&self, pubkey: Fr, balance: Fr, nonce: Fr) -> Fr {
-        self.hash_3(pubkey, balance, nonce)
+        self.hash_4(domain::account(), pubkey, balance, nonce)
     }
 
     /// Compute nullifier: hash_3(spending_key, commitment, position)
@@ -388,8 +389,70 @@ mod tests {
 
         let leaf = mimc.compute_account_leaf(pubkey, balance, nonce);
 
-        // Should be hash_3(pubkey, balance, nonce)
-        let expected = mimc.hash_3(pubkey, balance, nonce);
+        // Should be hash_4(domain_account, pubkey, balance, nonce)
+        // Matches circuit's compute_account_leaf
+        let expected = mimc.hash_4(domain::account(), pubkey, balance, nonce);
         assert_eq!(leaf, expected);
+    }
+
+    #[test]
+    fn test_batch_58_hash() {
+        // Test case from actual failed batch 58:
+        // - 0 transfers, 0 withdrawals, 1 shielded transaction
+        // - Values from Prover.toml
+        use ark_ff::BigInteger;
+        use num_bigint::BigUint;
+
+        let mimc = MiMC::new();
+        let batch_id = Fr::from(58u64);
+
+        // Shielded transaction from Prover.toml
+        let nullifier_dec =
+            "7616971353247117454465635208226161158442151985157735778832845157632758123933";
+        let output_commitment_dec =
+            "9742579207011299985260428178793458874858518230054558356243537317566210478598";
+
+        // Parse as BigUint and convert to Fr
+        let nullifier_big: BigUint = nullifier_dec.parse().unwrap();
+        let output_commitment_big: BigUint = output_commitment_dec.parse().unwrap();
+
+        let nullifier = Fr::from_be_bytes_mod_order(&{
+            let bytes = nullifier_big.to_bytes_be();
+            let mut arr = [0u8; 32];
+            let start = 32 - bytes.len();
+            arr[start..].copy_from_slice(&bytes);
+            arr
+        });
+        let output_commitment = Fr::from_be_bytes_mod_order(&{
+            let bytes = output_commitment_big.to_bytes_be();
+            let mut arr = [0u8; 32];
+            let start = 32 - bytes.len();
+            arr[start..].copy_from_slice(&bytes);
+            arr
+        });
+
+        let shielded = vec![ShieldedData {
+            nullifier,
+            output_commitment,
+        }];
+
+        // Compute batch hash
+        let batch_hash = compute_batch_hash(&mimc, batch_id, &[], &[], &shielded);
+
+        // Convert to decimal string for comparison
+        let hash_big = BigUint::from_bytes_be(&batch_hash.into_bigint().to_bytes_be());
+        let hash_str = hash_big.to_string();
+
+        // Expected from public witness file
+        let expected =
+            "1763393191922739858634693308814702990929063366376880176226696705996392451429";
+
+        println!("Computed batch_hash: {}", hash_str);
+        println!("Expected batch_hash: {}", expected);
+
+        assert_eq!(
+            hash_str, expected,
+            "Batch hash mismatch! Circuit and Rust MiMC must produce same value"
+        );
     }
 }

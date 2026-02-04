@@ -11022,6 +11022,8 @@ dependencies = [
  "hex",
  "hkdf",
  "log",
+ "num-bigint 0.4.6",
+ "num-traits",
  "prover",
  "reqwest",
  "rocksdb",

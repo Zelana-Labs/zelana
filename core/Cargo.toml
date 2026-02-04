@@ -16,6 +16,8 @@ dashmap = "6.1.0"                           # Concurrent HashMap for session man
 ed25519-dalek = {workspace = true}
 env_logger = "0.11.8"
 hex = { workspace = true }
+num-bigint = "0.4"
+num-traits = "0.2"
 hkdf = "0.12.4"
 log = "0.4.29"
 rocksdb = {workspace = true}

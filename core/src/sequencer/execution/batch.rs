@@ -36,7 +36,13 @@ use tracing::warn;
 
 use super::tx_router::{BatchDiff, TxResult, TxResultType, TxRouter};
 use crate::api::types::{TxStatus, TxSummary, TxType};
+use crate::sequencer::settlement::prover::{
+    BatchPublicInputs, BatchWitness, build_public_inputs, build_witness_with_proofs,
+};
+use crate::sequencer::storage::compute_withdrawal_root_mimc;
 use crate::sequencer::storage::db::RocksDbStore;
+use crate::storage::StateStore;
+use zelana_account::{AccountId, AccountState};
 use zelana_transaction::TransactionType;
 
 // ============================================================================
@@ -105,6 +111,8 @@ pub struct Batch {
     pub started_at: Instant,
     /// Count of shielded transactions
     pub shielded_count: usize,
+    /// Count of withdrawal transactions
+    pub withdrawal_count: usize,
     /// Pre-batch state root (transparent)
     pub pre_state_root: [u8; 32],
     /// Post-batch state root (transparent)
@@ -119,6 +127,8 @@ pub struct Batch {
     pub l1_tx_sig: Option<String>,
     /// Whether state diff was already committed (dev mode immediate commit)
     pub committed: bool,
+    /// Pre-computed witness (built before commit in DEV mode)
+    pub witness: Option<BatchWitness>,
 }
 
 impl Batch {
@@ -131,6 +141,7 @@ impl Batch {
             diff: None,
             started_at: Instant::now(),
             shielded_count: 0,
+            withdrawal_count: 0,
             pre_state_root,
             post_state_root: None,
             pre_shielded_root,
@@ -138,6 +149,7 @@ impl Batch {
             proof: None,
             l1_tx_sig: None,
             committed: false,
+            witness: None,
         }
     }
 
@@ -150,6 +162,16 @@ impl Batch {
 
         // Seal if we hit max shielded transactions
         if self.shielded_count >= config.max_shielded {
+            return true;
+        }
+
+        // Seal immediately after a withdrawal (limit 1 per batch for reliable proving)
+        if self.withdrawal_count >= 1 {
+            return true;
+        }
+
+        // Seal immediately after a shielded transaction (limit 1 per batch for reliable proving)
+        if self.shielded_count >= 1 {
             return true;
         }
 
@@ -173,6 +195,11 @@ impl Batch {
         // Track shielded count
         if matches!(tx, TransactionType::Shielded(_)) {
             self.shielded_count += 1;
+        }
+
+        // Track withdrawal count
+        if matches!(tx, TransactionType::Withdraw(_)) {
+            self.withdrawal_count += 1;
         }
 
         self.transactions.push(tx);
@@ -240,6 +267,9 @@ pub struct BatchManager {
     proving_batches: Vec<Batch>,
     /// Batches waiting for settlement
     pending_settlement: Vec<Batch>,
+    /// Pending account states for transactions in current batch (not yet executed)
+    /// This tracks expected balances/nonces for rapid successive transactions
+    pending_states: std::collections::HashMap<AccountId, AccountState>,
 }
 
 impl BatchManager {
@@ -262,6 +292,7 @@ impl BatchManager {
             current_batch: None,
             proving_batches: Vec::new(),
             pending_settlement: Vec::new(),
+            pending_states: std::collections::HashMap::new(),
         })
     }
 
@@ -282,6 +313,10 @@ impl BatchManager {
     pub fn submit_transaction(&mut self, tx: TransactionType) -> Result<()> {
         self.ensure_batch();
 
+        // Track pending state changes for rapid successive transactions
+        // This allows get_pending_account to return correct nonces before batch execution
+        self.update_pending_state(&tx);
+
         let batch = self.current_batch.as_mut().unwrap();
         batch.add_transaction(tx)?;
 
@@ -291,6 +326,77 @@ impl BatchManager {
         }
 
         Ok(())
+    }
+
+    /// Update pending states based on a transaction being added to the batch
+    /// This tracks expected balances/nonces before the batch is actually executed
+    fn update_pending_state(&mut self, tx: &TransactionType) {
+        match tx {
+            TransactionType::Transfer(signed_tx) => {
+                let from = AccountId(signed_tx.signer_pubkey);
+                let to = signed_tx.data.to;
+                let amount = signed_tx.data.amount;
+
+                // Get current state (from pending_states or DB)
+                let from_state = self.get_account_state_internal(&from);
+                let to_state = self.get_account_state_internal(&to);
+
+                // Update sender: debit + nonce increment
+                let new_from = AccountState {
+                    balance: from_state.balance.saturating_sub(amount),
+                    nonce: from_state.nonce + 1,
+                };
+                self.pending_states.insert(from, new_from);
+
+                // Update receiver: credit (no nonce change)
+                if from != to {
+                    let new_to = AccountState {
+                        balance: to_state.balance + amount,
+                        nonce: to_state.nonce,
+                    };
+                    self.pending_states.insert(to, new_to);
+                }
+            }
+            TransactionType::Withdraw(withdraw) => {
+                let from = withdraw.from;
+                let amount = withdraw.amount;
+
+                let from_state = self.get_account_state_internal(&from);
+                let new_from = AccountState {
+                    balance: from_state.balance.saturating_sub(amount),
+                    nonce: from_state.nonce + 1,
+                };
+                self.pending_states.insert(from, new_from);
+            }
+            TransactionType::Deposit(deposit) => {
+                let to = deposit.to;
+                let amount = deposit.amount;
+
+                let to_state = self.get_account_state_internal(&to);
+                let new_to = AccountState {
+                    balance: to_state.balance + amount,
+                    nonce: to_state.nonce,
+                };
+                self.pending_states.insert(to, new_to);
+            }
+            TransactionType::Shielded(_) => {
+                // Shielded transactions don't affect transparent account state
+            }
+        }
+    }
+
+    /// Get account state from pending_states, router cache, or database
+    fn get_account_state_internal(&self, id: &AccountId) -> AccountState {
+        // First check pending_states (transactions added to batch but not executed)
+        if let Some(state) = self.pending_states.get(id) {
+            return state.clone();
+        }
+        // Then check router's account_cache (executed but not committed)
+        if let Some(state) = self.router.get_pending_account(id) {
+            return state.clone();
+        }
+        // Finally check database
+        self.db.get_account_state(id).unwrap_or_default()
     }
 
     /// Submit multiple transactions
@@ -333,15 +439,122 @@ impl BatchManager {
         let diff = self.router.execute_batch(txs.clone());
         batch.transactions = txs;
 
+        // Clear pending_states - the router's account_cache now has the executed state
+        self.pending_states.clear();
+
         // Get post-execution roots
-        let post_state_root = self.router.transparent_root();
+        // CRITICAL: We must compute post_state_root by processing transactions in the SAME ORDER
+        // as the Noir circuit. The circuit processes transfers as: sender_update → receiver_update
+        // for each transaction sequentially. Using HashMap iteration (undefined order) causes
+        // root mismatch because Merkle tree roots depend on insertion order.
+        // Also: Deposits are NOT processed by the circuit, so we skip them here.
+        let post_state_root = {
+            let mut sim_tree = self.router.account_tree().clone();
+            let mut account_states: std::collections::HashMap<AccountId, AccountState> =
+                std::collections::HashMap::new();
+
+            // Pre-populate account states from DB for all accounts involved in transactions
+            for tx in &batch.transactions {
+                match tx {
+                    TransactionType::Transfer(t) => {
+                        let sender_id = AccountId(t.signer_pubkey);
+                        let receiver_id = t.data.to;
+                        if !account_states.contains_key(&sender_id) {
+                            account_states.insert(
+                                sender_id,
+                                self.db.get_account_state(&sender_id).unwrap_or_default(),
+                            );
+                        }
+                        if !account_states.contains_key(&receiver_id) {
+                            account_states.insert(
+                                receiver_id,
+                                self.db.get_account_state(&receiver_id).unwrap_or_default(),
+                            );
+                        }
+                    }
+                    TransactionType::Withdraw(w) => {
+                        let sender_id = w.from;
+                        if !account_states.contains_key(&sender_id) {
+                            account_states.insert(
+                                sender_id,
+                                self.db.get_account_state(&sender_id).unwrap_or_default(),
+                            );
+                        }
+                    }
+                    _ => {} // Deposits and Shielded don't affect transparent state root in circuit
+                }
+            }
+
+            // Process transactions in CIRCUIT ORDER (same as Noir circuit)
+            for tx in &batch.transactions {
+                match tx {
+                    TransactionType::Transfer(t) => {
+                        // 1. Update sender (debit + nonce increment) - circuit does this first
+                        let sender_id = AccountId(t.signer_pubkey);
+                        let sender_state =
+                            account_states.get(&sender_id).cloned().unwrap_or_default();
+                        let new_sender = AccountState {
+                            balance: sender_state.balance.saturating_sub(t.data.amount),
+                            nonce: sender_state.nonce + 1,
+                        };
+                        sim_tree.insert(&sender_id, &new_sender);
+                        account_states.insert(sender_id, new_sender);
+
+                        // 2. Update receiver (credit, no nonce change) - circuit does this second
+                        let receiver_id = t.data.to;
+                        let receiver_state = account_states
+                            .get(&receiver_id)
+                            .cloned()
+                            .unwrap_or_default();
+                        let new_receiver = AccountState {
+                            balance: receiver_state.balance + t.data.amount,
+                            nonce: receiver_state.nonce,
+                        };
+                        sim_tree.insert(&receiver_id, &new_receiver);
+                        account_states.insert(receiver_id, new_receiver);
+                    }
+                    TransactionType::Withdraw(w) => {
+                        // Update sender (debit + nonce increment)
+                        let sender_id = w.from;
+                        let sender_state =
+                            account_states.get(&sender_id).cloned().unwrap_or_default();
+                        let new_sender = AccountState {
+                            balance: sender_state.balance.saturating_sub(w.amount),
+                            nonce: sender_state.nonce + 1,
+                        };
+                        sim_tree.insert(&sender_id, &new_sender);
+                        account_states.insert(sender_id, new_sender);
+                    }
+                    TransactionType::Deposit(_) | TransactionType::Shielded(_) => {
+                        // Circuit doesn't process deposits or shielded txs for transparent state
+                        // Skip them to match circuit behavior
+                    }
+                }
+            }
+
+            sim_tree.root()
+        };
+        // For shielded state: execute_shielded() already updates shielded_state directly,
+        // so shielded_root() returns the correct post-execution root
         let post_shielded_root = self.router.shielded_root();
 
         // Store transaction summaries for API queries
         self.store_tx_summaries(batch_id, &diff.results);
 
-        // If immediate commit mode (dev), commit state changes now
+        // IMPORTANT: Build witness BEFORE commit in DEV mode
+        // In DEV mode, commit() updates the account_tree and db immediately.
+        // The witness builder needs the PRE-batch tree state to compute correct merkle paths.
+        // So we must build the witness here, before commit modifies the tree.
         if immediate_commit {
+            log::info!(
+                "[DEV] Building witness before commit for batch {} ({} txs)",
+                batch_id,
+                batch.transactions.len()
+            );
+            let witness = build_witness_with_proofs(&batch, self.router.account_tree(), &self.db);
+            batch.witness = Some(witness);
+
+            // Now commit - this updates account_tree and db
             self.router.commit(diff.clone())?;
             batch.committed = true;
             log::info!("[DEV] Immediately committed state for batch {}", batch_id);
@@ -469,6 +682,82 @@ impl BatchManager {
     /// Get a mutable reference to the transaction router
     pub fn router_mut(&mut self) -> &mut TxRouter {
         &mut self.router
+    }
+
+    /// Get pending account state from the current batch's in-memory cache.
+    /// Returns None if the account has no pending changes.
+    ///
+    /// This checks in order:
+    /// 1. pending_states - transactions added to batch but not yet executed
+    /// 2. router's account_cache - transactions executed but not yet committed
+    pub fn get_pending_account(&self, id: &AccountId) -> Option<AccountState> {
+        // First check pending_states (transactions added but not executed)
+        if let Some(state) = self.pending_states.get(id) {
+            return Some(state.clone());
+        }
+        // Then check router's cache (executed but not committed)
+        self.router.get_pending_account(id).cloned()
+    }
+
+    /// Prepare a batch for proving by building witness with merkle proofs.
+    /// Returns (batch_id, public_inputs, witness) and marks the batch as proving.
+    /// This method handles the borrow checker issues by accessing both
+    /// the batch and account tree within the same method scope.
+    pub fn prepare_batch_for_proving(
+        &mut self,
+    ) -> Option<(u64, Result<BatchPublicInputs>, BatchWitness)> {
+        // Find the next sealed batch
+        log::trace!(
+            "prepare_batch_for_proving: checking {} proving_batches, states: {:?}",
+            self.proving_batches.len(),
+            self.proving_batches
+                .iter()
+                .map(|b| &b.state)
+                .collect::<Vec<_>>()
+        );
+
+        let batch_idx = self
+            .proving_batches
+            .iter()
+            .position(|b| b.state == BatchState::Sealed)?;
+
+        // Build witness with proofs from account tree
+        let batch = &self.proving_batches[batch_idx];
+        let batch_id = batch.id;
+        log::info!(
+            "prepare_batch_for_proving: found sealed batch {} with {} txs",
+            batch_id,
+            batch.transactions.len()
+        );
+
+        // Compute withdrawal root using MiMC (matches Noir circuit)
+        // For now, we only count withdrawals (deposit-only batches have 0)
+        let num_withdrawals = batch
+            .transactions
+            .iter()
+            .filter(|tx| matches!(tx, TransactionType::Withdraw(_)))
+            .count() as u64;
+        let withdrawal_root = compute_withdrawal_root_mimc(batch_id, num_withdrawals);
+
+        let inputs = build_public_inputs(batch, withdrawal_root);
+
+        // Use pre-computed witness if available (DEV mode builds it before commit),
+        // otherwise build it now (production mode - commit hasn't happened yet)
+        let witness = if let Some(w) = batch.witness.clone() {
+            log::info!(
+                "Using pre-computed witness for batch {} (DEV mode)",
+                batch_id
+            );
+            w
+        } else {
+            log::info!("Building witness for batch {} (production mode)", batch_id);
+            build_witness_with_proofs(batch, self.router.account_tree(), &self.db)
+        };
+
+        // Mark as proving
+        self.proving_batches[batch_idx].start_proving();
+
+        Some((batch_id, inputs, witness))
     }
 
     /// Store transaction summaries for API queries

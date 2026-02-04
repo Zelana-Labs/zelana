@@ -216,11 +216,15 @@ export class ApiClient {
       account_id: string;
       balance: number;
       nonce: number;
+      pending_balance?: number;
+      pending_nonce?: number;
     }>('/account', { account_id: accountId });
     return {
       accountId: resp.account_id,
       balance: BigInt(resp.balance),
       nonce: BigInt(resp.nonce),
+      pendingBalance: resp.pending_balance !== undefined ? BigInt(resp.pending_balance) : undefined,
+      pendingNonce: resp.pending_nonce !== undefined ? BigInt(resp.pending_nonce) : undefined,
     };
   }
 
@@ -344,6 +348,11 @@ export class ApiClient {
       ciphertext: Array.from(request.ciphertext),
       ephemeral_key: Array.from(request.ephemeralKey),
       nonce: request.nonce ? Array.from(request.nonce) : undefined,
+      // Shield/unshield hints for balance updates
+      shield_from: request.shieldFrom ? Array.from(request.shieldFrom) : undefined,
+      shield_amount: request.shieldAmount !== undefined ? Number(request.shieldAmount) : undefined,
+      unshield_to: request.unshieldTo ? Array.from(request.unshieldTo) : undefined,
+      unshield_amount: request.unshieldAmount !== undefined ? Number(request.unshieldAmount) : undefined,
     });
     return {
       txHash: resp.tx_hash,

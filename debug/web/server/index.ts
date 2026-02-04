@@ -318,9 +318,30 @@ dbClient.connect().catch((e) => {
 // Create WebSocket upgrade handler
 const wsHandler = createWebSocketHandler(dbClient);
 
-// Export for Bun
-export default {
+// Custom fetch handler that handles WebSocket upgrades
+const server = Bun.serve({
   port: PORT,
-  fetch: app.fetch,
+  fetch(req, server) {
+    const url = new URL(req.url);
+
+    // Handle WebSocket upgrade
+    if (url.pathname === "/ws") {
+      const upgraded = server.upgrade(req, {
+        data: { subscriptions: new Set() },
+      });
+      if (upgraded) {
+        return; // Bun handles the response
+      }
+      return new Response("WebSocket upgrade failed", { status: 400 });
+    }
+
+    // Pass to Hono for regular HTTP requests
+    return app.fetch(req);
+  },
   websocket: wsHandler,
-};
+});
+
+console.log(`WebSocket server running on ws://localhost:${PORT}/ws`);
+
+// Export for compatibility
+export default server;

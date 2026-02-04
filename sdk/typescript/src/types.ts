@@ -14,8 +14,14 @@ export type Bytes32 = Uint8Array;
 /** Account state on L2 */
 export interface AccountState {
   accountId: string;
+  /** Finalized balance (from last settled batch) */
   balance: bigint;
+  /** Finalized nonce (from last settled batch) */
   nonce: bigint;
+  /** Pending balance including unconfirmed transactions in current batch */
+  pendingBalance?: bigint;
+  /** Pending nonce including unconfirmed transactions in current batch */
+  pendingNonce?: bigint;
 }
 
 // ============================================================================
@@ -114,6 +120,14 @@ export interface ShieldedRequest {
   ephemeralKey: Bytes32;
   /** Nonce for ChaCha20-Poly1305 encryption (12 bytes) */
   nonce?: Uint8Array;
+  /** For shield: L2 account to debit (32 bytes) */
+  shieldFrom?: Bytes32;
+  /** For shield: Amount in lamports */
+  shieldAmount?: bigint;
+  /** For unshield: L2 account to credit (32 bytes) */
+  unshieldTo?: Bytes32;
+  /** For unshield: Amount in lamports */
+  unshieldAmount?: bigint;
 }
 
 /** Shielded transaction response */
