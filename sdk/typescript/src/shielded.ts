@@ -11,9 +11,7 @@ import { sha512 } from '@noble/hashes/sha512';
 import { bytesToHex, hexToBytes, concatBytes, u64ToLeBytes, randomBytes } from './utils';
 import type { Bytes32 } from './types';
 
-// ============================================================================
 // Types
-// ============================================================================
 
 /**
  * A shielded note representing privately held value
@@ -133,9 +131,7 @@ export interface ShieldedTransaction {
   encryptedOutputs: EncryptedNote[];
 }
 
-// ============================================================================
 // Key Generation
-// ============================================================================
 
 /**
  * Generate a new shielded key bundle
@@ -180,9 +176,7 @@ function derivePublicKey(spendingKey: Bytes32): Bytes32 {
   return hash.slice(0, 32);
 }
 
-// ============================================================================
 // Note Operations
-// ============================================================================
 
 /**
  * Create a new note with random blinding
@@ -276,9 +270,7 @@ function deriveNullifierKey(spendingKey: Bytes32): Bytes32 {
   return hash.slice(0, 32);
 }
 
-// ============================================================================
 // Transaction Building
-// ============================================================================
 
 /**
  * ShieldedTransactionBuilder helps construct shielded transactions
@@ -411,9 +403,7 @@ export class ShieldedTransactionBuilder {
   }
 }
 
-// ============================================================================
 // Note Encryption (Production-ready)
-// ============================================================================
 
 import {
   encryptNote as encryptNoteProper,
@@ -462,9 +452,7 @@ function u16ToLeBytes(value: number): Uint8Array {
   return new Uint8Array([value & 0xff, (value >> 8) & 0xff]);
 }
 
-// ============================================================================
 // Note Scanning
-// ============================================================================
 
 /**
  * Scan encrypted notes for ones belonging to a viewing key
@@ -502,9 +490,7 @@ export function tryDecryptNote(
   return null;
 }
 
-// ============================================================================
 // Exports
-// ============================================================================
 
 export const shielded = {
   generateKeys: generateShieldedKeys,

@@ -1,37 +1,25 @@
-# Build artifacts
 /target
 /data
 dist
-
-# IDE
 .vscode
-
-# Environment files
 .env
 .env.*
-
-# Solana/Surfpool
 .surfpool
 keys
-
-# Database files (RocksDB)
 /zelana-db
 zelana-db_secondary
 zelana-db_secondary_secondary
 **/zelana-db_secondary_secondary
-
-# Dependencies
 node_modules
-
-# Config files (may contain local paths)
 *.json
 !package.json
 !package-lock.json
 !tsconfig.json
 
-# Sunspot output files
 *.ccs
 *.pk
 *.vk
 *.proof
 *.pw
+
+.codebase-index

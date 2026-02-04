@@ -42,9 +42,7 @@ fn domain_account() -> BigUint {
     BigUint::one()
 }
 
-// ============================================================================
 // MiMC Hash Implementation (matches Noir circuit exactly)
-// ============================================================================
 
 /// Compute round constant: (i+1)^3 + (i+1)
 fn round_constant(i: u32) -> BigUint {
@@ -202,9 +200,7 @@ fn field_to_bytes(field: &BigUint) -> [u8; 32] {
     result
 }
 
-// ============================================================================
 // Merkle Path
-// ============================================================================
 
 /// A Merkle proof for an account
 #[derive(Debug, Clone)]
@@ -263,9 +259,7 @@ impl Default for AccountMerklePath {
     }
 }
 
-// ============================================================================
 // Account Sparse Merkle Tree
-// ============================================================================
 
 /// Sparse Merkle tree for account states.
 ///
@@ -463,9 +457,7 @@ impl Default for AccountTree {
     }
 }
 
-// ============================================================================
 // Tests
-// ============================================================================
 
 #[cfg(test)]
 mod tests {

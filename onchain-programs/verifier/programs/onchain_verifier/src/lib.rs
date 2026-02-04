@@ -77,9 +77,7 @@ pub struct VerifiedRisc0Proof {
     pub bump: u8,
 }
 
-// ============================================================================
 // Batch Verification (for Bridge CPI)
-// ============================================================================
 
 /// Maximum number of IC points we support (determines public inputs count)
 pub const MAX_IC_POINTS: usize = 8;

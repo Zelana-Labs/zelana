@@ -67,7 +67,7 @@ async fn main() -> anyhow::Result<()> {
         );
 
         rpc.send_and_confirm_transaction(&tx)?;
-        println!("✅ Bridge Initialized");
+        println!(" Bridge Initialized");
     }
 
     // Deposit
@@ -109,7 +109,7 @@ async fn main() -> anyhow::Result<()> {
     );
 
     let sig = rpc.send_and_confirm_transaction(&tx)?;
-    println!("✅ Deposit Confirmed! Sig: {}", sig);
+    println!(" Deposit Confirmed! Sig: {}", sig);
 
     Ok(())
 }

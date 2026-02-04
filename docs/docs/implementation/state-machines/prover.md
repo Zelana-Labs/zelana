@@ -216,36 +216,36 @@ If off-chain calculated root differs from header root, bail immediately with det
 ## Summary Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                        Prover Service                          │
-│                                                                 │
-│  ┌─────────┐    ┌─────────────┐    ┌──────────────┐            │
-│  │ SQLite  │◄───│   Polling   │───►│   RocksDB    │            │
-│  │ batches │    │   Loop      │    │ txs/accounts │            │
-│  └────┬────┘    └──────┬──────┘    └──────────────┘            │
-│       │                │                                        │
-│       │         ┌──────▼──────┐                                │
-│       │         │  Witness    │                                │
-│       │         │  Builder    │                                │
-│       │         └──────┬──────┘                                │
-│       │                │                                        │
-│       │         ┌──────▼──────┐                                │
-│       │         │ L2Block     │   Public: prev_root, new_root  │
-│       │         │ Circuit     │   Private: txs, accounts,      │
-│       │         │ (Groth16)   │            batch_id            │
-│       │         └──────┬──────┘                                │
-│       │                │                                        │
-│       │         ┌──────▼──────┐                                │
-│       │         │   Proof     │                                │
-│       │         │ Generation  │                                │
-│       │         └──────┬──────┘                                │
-│       │                │                                        │
-│       │         ┌──────▼──────┐                                │
-│       │         │    L1       │                                │
-│       │         │ Settlement  │───► Solana Devnet              │
-│       │         └──────┬──────┘                                │
-│       │                │                                        │
-│       ▼                ▼                                        │
-│   Settled-OnChain / SettlementFailed                           │
-└─────────────────────────────────────────────────────────────────┘
+-------------------------------------------------------------------
+-                        Prover Service                          -
+-                                                                 -
+-  -----------    ---------------    ----------------            -
+-  - SQLite  -◄----   Polling   ----►-   RocksDB    -            -
+-  - batches -    -   Loop      -    - txs/accounts -            -
+-  -----------    ---------------    ----------------            -
+-       -                -                                        -
+-       -         -------▼-------                                -
+-       -         -  Witness    -                                -
+-       -         -  Builder    -                                -
+-       -         ---------------                                -
+-       -                -                                        -
+-       -         -------▼-------                                -
+-       -         - L2Block     -   Public: prev_root, new_root  -
+-       -         - Circuit     -   Private: txs, accounts,      -
+-       -         - (Groth16)   -            batch_id            -
+-       -         ---------------                                -
+-       -                -                                        -
+-       -         -------▼-------                                -
+-       -         -   Proof     -                                -
+-       -         - Generation  -                                -
+-       -         ---------------                                -
+-       -                -                                        -
+-       -         -------▼-------                                -
+-       -         -    L1       -                                -
+-       -         - Settlement  ----► Solana Devnet              -
+-       -         ---------------                                -
+-       -                -                                        -
+-       ▼                ▼                                        -
+-   Settled-OnChain / SettlementFailed                           -
+-------------------------------------------------------------------
 ```

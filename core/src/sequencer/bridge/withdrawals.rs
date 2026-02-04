@@ -4,17 +4,17 @@
 //! Manages the queue of pending withdrawals waiting for L1 settlement.
 //!
 //! ```text
-//! ┌─────────────────────────────────────────────────────────────────┐
-//! │                   Withdrawal Lifecycle                          │
-//! │                                                                  │
-//! │  ┌──────────┐    ┌─────-────┐    ┌──────────┐    ┌───────────┐  │
-//! │  │ Pending  │───>│ Included │───>│ Submitted│───>│ Finalized │  │
-//! │  │          │    │ in Batch │    │  to L1   │    │           │  │
-//! │  └──────────┘    └──────────┘    └──────────┘    └───────────┘  │
-//! │                                                                  │
-//! │  MVP: Standard withdrawals (7-day challenge period on L1)       │
-//! │  Phase 2: Fast withdrawals (liquidity provider fronts funds)    │
-//! └─────────────────────────────────────────────────────────────────┘
+//! -------------------------------------------------------------------
+//! -                   Withdrawal Lifecycle                          -
+//! -                                                                  -
+//! -  ------------    ------------    ------------    -------------  -
+//! -  - Pending  ---->- Included ---->- Submitted---->- Finalized -  -
+//! -  -          -    - in Batch -    -  to L1   -    -           -  -
+//! -  ------------    ------------    ------------    -------------  -
+//! -                                                                  -
+//! -  MVP: Standard withdrawals (7-day challenge period on L1)       -
+//! -  Phase 2: Fast withdrawals (liquidity provider fronts funds)    -
+//! -------------------------------------------------------------------
 //! ```
 
 use std::collections::HashMap;
@@ -27,9 +27,7 @@ use crate::sequencer::execution::tx_router::PendingWithdrawal;
 use crate::sequencer::storage::db::RocksDbStore;
 use zelana_account::AccountId;
 
-// ============================================================================
 // Withdrawal States
-// ============================================================================
 
 /// State of a withdrawal in the queue
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -85,9 +83,7 @@ impl From<PendingWithdrawal> for TrackedWithdrawal {
     }
 }
 
-// ============================================================================
 // Withdrawal Queue
-// ============================================================================
 
 /// Manages the withdrawal queue
 pub struct WithdrawalQueue {
@@ -363,9 +359,7 @@ pub struct WithdrawalStats {
     pub total_pending_amount: u64,
 }
 
-// ============================================================================
 // Withdrawal Merkle Tree (for L1 verification)
-// ============================================================================
 
 /// Build a merkle tree of withdrawals for L1 verification
 pub fn build_withdrawal_merkle_root(withdrawals: &[TrackedWithdrawal]) -> [u8; 32] {

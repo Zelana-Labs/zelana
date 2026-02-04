@@ -28,10 +28,10 @@ async function runIntegrationTests() {
   async function test(name: string, fn: () => Promise<void>) {
     try {
       await fn();
-      console.log(`✓ ${name}`);
+      console.log(` ${name}`);
       passed++;
     } catch (error) {
-      console.log(`✗ ${name}`);
+      console.log(` ${name}`);
       console.log(`  Error: ${error instanceof Error ? error.message : error}`);
       failed++;
     }
@@ -44,9 +44,7 @@ async function runIntegrationTests() {
 
   console.log(`Test keypair: ${keypair.publicKeyBase58}\n`);
 
-  // =========================================================================
   // Health & Status Tests
-  // =========================================================================
   console.log('--- Health & Status ---');
 
   await test('Health endpoint returns healthy', async () => {
@@ -80,9 +78,7 @@ async function runIntegrationTests() {
 
   console.log();
 
-  // =========================================================================
   // Keypair & Signing Tests
-  // =========================================================================
   console.log('--- Keypair & Signing ---');
 
   await test('Generate and sign transfer', async () => {
@@ -133,9 +129,7 @@ async function runIntegrationTests() {
 
   console.log();
 
-  // =========================================================================
   // Account & Transaction Tests
-  // =========================================================================
   console.log('--- Account & Transactions ---');
 
   await test('Account query for unfunded account returns error', async () => {
@@ -179,9 +173,7 @@ async function runIntegrationTests() {
 
   console.log();
 
-  // =========================================================================
   // Summary
-  // =========================================================================
   console.log('=== Summary ===');
   console.log(`Passed: ${passed}`);
   console.log(`Failed: ${failed}`);

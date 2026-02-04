@@ -107,7 +107,7 @@ async fn main() -> anyhow::Result<()> {
         Ok(resp) => {
             if resp.status().is_success() {
                 if let Ok(state) = resp.json::<AccountState>().await {
-                    println!("\n📊 Account State:");
+                    println!("\n Account State:");
                     println!(
                         "  Balance: {} lamports ({} SOL)",
                         state.balance,
@@ -118,7 +118,7 @@ async fn main() -> anyhow::Result<()> {
                     print_info("Account not found or empty response");
                 }
             } else if resp.status().as_u16() == 404 {
-                println!("\n📊 Account State:");
+                println!("\n Account State:");
                 println!("  Balance: 0 lamports (0 SOL)");
                 println!("  Nonce: 0");
                 print_info("Account not yet registered. Deposit to create.");
@@ -142,7 +142,7 @@ async fn main() -> anyhow::Result<()> {
         Ok(resp) => {
             if resp.status().is_success() {
                 if let Ok(batch) = resp.json::<BatchInfo>().await {
-                    println!("\n📦 Latest Batch:");
+                    println!("\n Latest Batch:");
                     println!("  Batch Index: {}", batch.batch_index);
                     println!("  State Root: {}", batch.state_root);
                     println!("  TX Count: {}", batch.tx_count);

@@ -157,20 +157,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // prove
     let proof = Groth16::<Bn254>::prove(&pk, circuit.clone(), &mut rng)?;
-    println!("✅ Proof generated");
+    println!(" Proof generated");
 
     // verify
     let is_valid = Groth16::<Bn254>::verify(&vk, &[y_val], &proof)?;
-    println!("🔍 Verification result: {}", is_valid);
+    println!(" Verification result: {}", is_valid);
 
     // compact base64 JSON (previous approach)
     export_proof_json(&proof, "proof.json")?;
     export_vk_json(&vk, "vk.json")?;
-    println!("💾 Saved compact proof.json and vk.json");
+    println!(" Saved compact proof.json and vk.json");
 
     // snarkjs-style VK JSON (what you pasted)
     export_vk_snarkjs_json(&vk, "vk_snarkjs.json")?;
-    println!("💾 Saved snarkjs-style vk_snarkjs.json");
+    println!(" Saved snarkjs-style vk_snarkjs.json");
 
     Ok(())
 }

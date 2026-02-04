@@ -5,24 +5,24 @@
 //! through appropriate handlers and produces state diffs.
 //!
 //! ```text
-//! ┌─────────────────────────────────────────────────────────────────┐
-//! │                     Transaction Router                          │
-//! │                                                                  │
-//! │  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌────────────────┐  │
-//! │  │ Shielded │  │ Transfer │  │ Deposit  │  │   Withdraw     │  │
-//! │  │ (ZK)     │  │ (Signed) │  │ (L1→L2)  │  │   (L2→L1)      │  │
-//! │  └────┬─────┘  └────┬─────┘  └────┬─────┘  └───────┬────────┘  │
-//! │       │             │             │                │           │
-//! │       ▼             ▼             ▼                ▼           │
-//! │  ┌─────────────────────────────────────────────────────────┐   │
-//! │  │                   Unified StateDiff                      │   │
-//! │  │  • Account updates                                       │   │
-//! │  │  • Nullifiers spent                                      │   │
-//! │  │  • Commitments added                                     │   │
-//! │  │  • Encrypted notes stored                                │   │
-//! │  │  • Withdrawals queued                                    │   │
-//! │  └─────────────────────────────────────────────────────────┘   │
-//! └─────────────────────────────────────────────────────────────────┘
+//! -------------------------------------------------------------------
+//! -                     Transaction Router                          -
+//! -                                                                  -
+//! -  ------------  ------------  ------------  ------------------  -
+//! -  - Shielded -  - Transfer -  - Deposit  -  -   Withdraw     -  -
+//! -  - (ZK)     -  - (Signed) -  - (L1→L2)  -  -   (L2→L1)      -  -
+//! -  ------------  ------------  ------------  ------------------  -
+//! -       -             -             -                -           -
+//! -       ▼             ▼             ▼                ▼           -
+//! -  -----------------------------------------------------------   -
+//! -  -                   Unified StateDiff                      -   -
+//! -  -  • Account updates                                       -   -
+//! -  -  • Nullifiers spent                                      -   -
+//! -  -  • Commitments added                                     -   -
+//! -  -  • Encrypted notes stored                                -   -
+//! -  -  • Withdrawals queued                                    -   -
+//! -  -----------------------------------------------------------   -
+//! -------------------------------------------------------------------
 //! ```
 
 use std::collections::HashMap;
@@ -41,9 +41,7 @@ use zelana_transaction::{
     DepositEvent, PrivateTransaction, SignedTransaction, TransactionType, WithdrawRequest,
 };
 
-// ============================================================================
 // Execution Results
-// ============================================================================
 
 /// Result of executing a single transaction
 #[derive(Debug, Clone)]
@@ -106,9 +104,7 @@ pub struct PendingWithdrawal {
     pub l2_nonce: u64,
 }
 
-// ============================================================================
 // Transaction Router
-// ============================================================================
 
 /// The main transaction execution router
 pub struct TxRouter {
@@ -615,9 +611,7 @@ impl TxRouter {
         results.iter().filter(|r| r.success).count()
     }
 
-    // ========================================================================
     // Signature Verification
-    // ========================================================================
 
     /// Build the human-readable transfer message that TypeScript clients sign.
     ///
@@ -799,9 +793,7 @@ impl TxRouter {
     }
 }
 
-// ============================================================================
 // Serialization for PendingWithdrawal
-// ============================================================================
 
 impl serde::Serialize for PendingWithdrawal {
     fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
@@ -933,9 +925,7 @@ mod tests {
         assert!(diff.results.is_empty());
     }
 
-    // ========================================================================
     // Transfer Tests
-    // ========================================================================
 
     #[test]
     fn test_transfer_with_valid_signature() {
@@ -1175,9 +1165,7 @@ mod tests {
         assert_eq!(state.nonce, 1, "Nonce should still increment");
     }
 
-    // ========================================================================
     // Withdrawal Tests
-    // ========================================================================
 
     #[test]
     fn test_withdrawal_with_valid_signature() {
@@ -1289,9 +1277,7 @@ mod tests {
         );
     }
 
-    // ========================================================================
     // Shielded Transaction Tests
-    // ========================================================================
 
     #[test]
     fn test_shielded_tx_success() {
@@ -1410,9 +1396,7 @@ mod tests {
         );
     }
 
-    // ========================================================================
     // Deposit Tests
-    // ========================================================================
 
     #[test]
     fn test_deposit_creates_account() {
@@ -1470,9 +1454,7 @@ mod tests {
         assert_eq!(state.nonce, 5, "Nonce unchanged for deposit");
     }
 
-    // ========================================================================
     // Multi-Transaction Batch Tests
-    // ========================================================================
 
     #[test]
     fn test_mixed_batch() {

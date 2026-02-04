@@ -5,20 +5,20 @@
 //! # Architecture
 //!
 //! ```text
-//! ┌─────────────────────────────────────────────────────────────────┐
-//! │                    Encrypted Mempool Flow                        │
-//! │                                                                  │
-//! │  1. User                    2. Sequencer            3. Committee │
-//! │  ┌──────────┐              ┌──────────────┐        ┌──────────┐ │
-//! │  │ Encrypt  │──encrypted──▶│   Order      │──────▶ │ Decrypt  │ │
-//! │  │ to K-of-N│   tx blob    │   (blind)    │ after  │ (K-of-N) │ │
-//! │  └──────────┘              └──────────────┘ order  └──────────┘ │
-//! │                                                                  │
-//! │  Benefits:                                                       │
-//! │  • MEV resistance (can't extract value from encrypted txs)      │
-//! │  • Front-running prevention (order is fixed before decrypt)     │
-//! │  • Censorship resistance (can't selectively censor)             │
-//! └─────────────────────────────────────────────────────────────────┘
+//! -------------------------------------------------------------------
+//! -                    Encrypted Mempool Flow                        -
+//! -                                                                  -
+//! -  1. User                    2. Sequencer            3. Committee -
+//! -  ------------              ----------------        ------------ -
+//! -  - Encrypt  ---encrypted--▶-   Order      -------▶ - Decrypt  - -
+//! -  - to K-of-N-   tx blob    -   (blind)    - after  - (K-of-N) - -
+//! -  ------------              ---------------- order  ------------ -
+//! -                                                                  -
+//! -  Benefits:                                                       -
+//! -  • MEV resistance (can't extract value from encrypted txs)      -
+//! -  • Front-running prevention (order is fixed before decrypt)     -
+//! -  • Censorship resistance (can't selectively censor)             -
+//! -------------------------------------------------------------------
 //! ```
 
 pub mod committee;

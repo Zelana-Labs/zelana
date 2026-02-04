@@ -23,9 +23,9 @@ pub fn render_ui(f: &mut Frame, app: &mut App) {
 
     // Minimalist header - clean and clear
     let header_text = if app.mode == Mode::Search {
-        format!("  RocksDB Inspector  │  Search: {}_", app.search_query)
+        format!("  RocksDB Inspector  -  Search: {}_", app.search_query)
     } else {
-        "  RocksDB Inspector  │  Database Viewer".to_string()
+        "  RocksDB Inspector  -  Database Viewer".to_string()
     };
 
     let header = Paragraph::new(header_text)
@@ -79,9 +79,9 @@ pub fn render_ui(f: &mut Frame, app: &mut App) {
         .split(chunks[2]);
 
     let footer_text = if app.mode == Mode::Search {
-        "  [ESC] Exit  │  [ENTER] Apply Search".to_string()
+        "  [ESC] Exit  -  [ENTER] Apply Search".to_string()
     } else {
-        "  [hjkl / ↑↓←→] Navigate  │  [/] Search  │  [c] Copy  │  [q] Quit".to_string()
+        "  [hjkl / ↑↓←→] Navigate  -  [/] Search  -  [c] Copy  -  [q] Quit".to_string()
     };
 
     let footer_left = Paragraph::new(footer_text)

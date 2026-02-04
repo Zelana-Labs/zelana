@@ -334,9 +334,7 @@ describe('E2E: Dev Mode Error Handling', () => {
   });
 });
 
-// =============================================================================
 // Withdrawal E2E Tests
-// =============================================================================
 
 describe('E2E: Withdrawal Flow', () => {
   let client: ZelanaClient;

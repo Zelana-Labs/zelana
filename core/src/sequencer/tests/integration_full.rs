@@ -15,9 +15,7 @@ use zelana_account::{AccountId, AccountState};
 use zelana_privacy::{Commitment, Nullifier};
 use zelana_threshold::encrypt_for_committee;
 
-// ============================================================================
 // Test Helpers
-// ============================================================================
 
 fn temp_db() -> RocksDbStore {
     let dir = TempDir::new().unwrap();
@@ -30,9 +28,7 @@ fn account(id: u8) -> AccountId {
     AccountId(b)
 }
 
-// ============================================================================
 // Shielded State Tests
-// ============================================================================
 
 #[test]
 fn test_shielded_commitment_lifecycle() {
@@ -96,9 +92,7 @@ fn test_shielded_merkle_root_consistency() {
     assert_eq!(state1.root(), state2.root());
 }
 
-// ============================================================================
 // Withdrawal Queue Tests
-// ============================================================================
 
 #[test]
 fn test_withdrawal_queue_lifecycle() {
@@ -148,9 +142,7 @@ fn test_withdrawal_queue_lifecycle() {
     assert!(matches!(w.state, WithdrawalState::Finalized));
 }
 
-// ============================================================================
 // Threshold Mempool Tests
-// ============================================================================
 
 #[tokio::test]
 async fn test_threshold_mempool_basic() {
@@ -273,9 +265,7 @@ async fn test_threshold_mempool_max_pending() {
     assert!(result.is_err());
 }
 
-// ============================================================================
 // Full L2 Cycle Test
-// ============================================================================
 
 #[test]
 fn test_full_l2_cycle_deposit_transfer_withdraw() {
@@ -364,9 +354,7 @@ fn test_full_l2_cycle_deposit_transfer_withdraw() {
     assert!(matches!(w.state, WithdrawalState::Finalized));
 }
 
-// ============================================================================
 // Database Persistence Tests
-// ============================================================================
 
 #[test]
 fn test_account_state_persistence() {
@@ -415,9 +403,7 @@ fn test_commitment_persistence() {
     );
 }
 
-// ============================================================================
 // Pipeline Integration Tests
-// ============================================================================
 
 #[tokio::test]
 async fn test_pipeline_end_to_end_with_deposits_and_transfers() {
@@ -619,9 +605,7 @@ async fn test_pipeline_pause_and_resume() {
     service.shutdown().await.unwrap();
 }
 
-// ============================================================================
 // Settlement with Withdrawals Tests
-// ============================================================================
 
 #[tokio::test]
 async fn test_pipeline_with_withdrawals() {
@@ -822,9 +806,7 @@ fn test_withdrawal_merkle_root_computation() {
     );
 }
 
-// ============================================================================
 // Batch & Transaction Recording Tests
-// ============================================================================
 
 #[tokio::test]
 async fn test_pipeline_stores_batch_and_tx_summaries() {
@@ -961,9 +943,7 @@ async fn test_pipeline_stores_batch_and_tx_summaries() {
     service.shutdown().await.unwrap();
 }
 
-// ============================================================================
 // End-to-End Shielded Transaction Tests
-// ============================================================================
 
 /// Tests shielded transaction through the full pipeline with MockProver
 #[tokio::test]
@@ -1165,9 +1145,7 @@ async fn test_pipeline_full_l2_cycle_with_shielded() {
     let alice = alice_kp.account_id();
     let bob = bob_kp.account_id();
 
-    // ========================================================================
     // Step 1: Deposit funds to Alice
-    // ========================================================================
     service
         .submit(TransactionType::Deposit(DepositEvent {
             to: alice,
@@ -1187,9 +1165,7 @@ async fn test_pipeline_full_l2_cycle_with_shielded() {
         }
     }
 
-    // ========================================================================
     // Step 2: Transfer from Alice to Bob (with valid signature)
-    // ========================================================================
     let transfer_data = TransactionData {
         from: alice,
         to: bob,
@@ -1214,9 +1190,7 @@ async fn test_pipeline_full_l2_cycle_with_shielded() {
         }
     }
 
-    // ========================================================================
     // Step 3: Shielded transaction (privacy layer)
-    // ========================================================================
     let private_tx = PrivateTransaction {
         proof: vec![1, 2, 3, 4], // Mock proof
         nullifier: [0xDE; 32],
@@ -1245,9 +1219,7 @@ async fn test_pipeline_full_l2_cycle_with_shielded() {
         }
     }
 
-    // ========================================================================
     // Step 4: Withdraw from Bob to L1 (with valid signature)
-    // ========================================================================
     let l1_dest: [u8; 32] = [0xFF; 32];
     let withdraw = bob_kp.sign_withdrawal(l1_dest, 1_000, 0);
 
@@ -1266,9 +1238,7 @@ async fn test_pipeline_full_l2_cycle_with_shielded() {
         }
     }
 
-    // ========================================================================
     // Verify final state
-    // ========================================================================
     let stats = service.stats().await.unwrap();
     assert_eq!(stats.state, PipelineState::Running);
     assert_eq!(stats.batches_proved, 4);

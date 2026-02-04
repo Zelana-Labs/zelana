@@ -30,9 +30,7 @@ use std::collections::BTreeMap;
 
 pub type PubkeyBytes = [u8; 32];
 
-// ============================================================================
 // Account State
-// ============================================================================
 
 /// Account state variable in the circuit
 #[derive(Clone, Debug)]
@@ -40,9 +38,7 @@ pub struct AccountVar {
     pub balance: FpVar<Fr>,
 }
 
-// ============================================================================
 // Transaction Witness
-// ============================================================================
 
 /// A transfer transaction witness
 #[derive(Clone, Debug)]
@@ -65,9 +61,7 @@ pub struct WithdrawalWitness {
     pub amount: u64,
 }
 
-// ============================================================================
 // Poseidon Config
-// ============================================================================
 
 /// Get Poseidon hash configuration for BN254
 /// Parameters chosen for 128-bit security
@@ -88,9 +82,7 @@ pub fn get_poseidon_config() -> PoseidonConfig<Fr> {
     PoseidonConfig::new(full_rounds, partial_rounds, alpha, mds, ark, rate, capacity)
 }
 
-// ============================================================================
 // L2 Block Circuit
-// ============================================================================
 
 /// The main L2 block circuit
 ///
@@ -102,7 +94,7 @@ pub fn get_poseidon_config() -> PoseidonConfig<Fr> {
 /// 5. Batch hash matches the transactions
 #[derive(Clone)]
 pub struct L2BlockCircuit {
-    // === Public Inputs (7 field elements) ===
+    // Public Inputs (7 field elements)
     /// Account state root before batch
     pub pre_state_root: Option<[u8; 32]>,
     /// Account state root after batch
@@ -118,7 +110,7 @@ pub struct L2BlockCircuit {
     /// Batch sequence number
     pub batch_id: Option<u64>,
 
-    // === Private Witness ===
+    // Private Witness
     /// Transfers in this batch
     pub transactions: Option<Vec<TransactionWitness>>,
     /// Initial account states
@@ -186,9 +178,7 @@ impl Default for L2BlockCircuit {
 
 impl ConstraintSynthesizer<Fr> for L2BlockCircuit {
     fn generate_constraints(self, cs: ConstraintSystemRef<Fr>) -> Result<(), SynthesisError> {
-        // =====================================================================
         // Allocate Public Inputs (ORDER MATTERS - must match verifier)
-        // =====================================================================
 
         // 1. pre_state_root
         let pre_state_bytes = self
@@ -240,9 +230,7 @@ impl ConstraintSynthesizer<Fr> for L2BlockCircuit {
         let batch_id_val = self.batch_id.ok_or(SynthesisError::AssignmentMissing)?;
         let batch_id_var = FpVar::new_input(cs.clone(), || Ok(Fr::from(batch_id_val)))?;
 
-        // =====================================================================
         // Allocate Private Witness
-        // =====================================================================
 
         let transactions = self.transactions.ok_or(SynthesisError::AssignmentMissing)?;
         let initial_accounts = self
@@ -263,9 +251,7 @@ impl ConstraintSynthesizer<Fr> for L2BlockCircuit {
             );
         }
 
-        // =====================================================================
         // Process Transfers
-        // =====================================================================
 
         let mut current_accounts = account_vars.clone();
 
@@ -310,9 +296,7 @@ impl ConstraintSynthesizer<Fr> for L2BlockCircuit {
             );
         }
 
-        // =====================================================================
         // Compute Account State Root (Poseidon fold)
-        // =====================================================================
 
         let mut sponge = PoseidonSpongeVar::new(cs.clone(), &self.poseidon_config);
 
@@ -357,9 +341,7 @@ impl ConstraintSynthesizer<Fr> for L2BlockCircuit {
         // Enforce: computed_post_state == expected_post_state
         computed_post_state.enforce_equal(&expected_post_state_var)?;
 
-        // =====================================================================
         // Compute Shielded Root (simplified for MVP)
-        // =====================================================================
 
         // For MVP: Just verify the roots are provided correctly
         // In full implementation: build merkle tree from commitments
@@ -392,9 +374,7 @@ impl ConstraintSynthesizer<Fr> for L2BlockCircuit {
             shielded_state.enforce_equal(&expected_post_shielded_var)?;
         }
 
-        // =====================================================================
         // Compute Withdrawal Root
-        // =====================================================================
 
         // Build merkle root of withdrawals
         let mut withdrawal_sponge = PoseidonSpongeVar::new(cs.clone(), &self.poseidon_config);
@@ -437,9 +417,7 @@ impl ConstraintSynthesizer<Fr> for L2BlockCircuit {
         // Enforce withdrawal root
         computed_wd_root.enforce_equal(&expected_withdrawal_root_var)?;
 
-        // =====================================================================
         // Verify Batch Hash
-        // =====================================================================
 
         // Compute batch hash from transactions
         let mut batch_sponge = PoseidonSpongeVar::new(cs.clone(), &self.poseidon_config);
@@ -485,9 +463,7 @@ impl ConstraintSynthesizer<Fr> for L2BlockCircuit {
         // Enforce batch hash matches
         computed_batch_hash.enforce_equal(&expected_batch_hash_var)?;
 
-        // =====================================================================
         // Verify pre_state_root (anchor constraint)
-        // =====================================================================
 
         // Compute pre_state_root from initial_accounts using same algorithm
         let mut pre_sponge = PoseidonSpongeVar::new(cs.clone(), &self.poseidon_config);

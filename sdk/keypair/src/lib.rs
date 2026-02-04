@@ -166,7 +166,7 @@ impl Keypair {
     }
 
     /// Exports the keypair as a 64-byte seed (for saving to file).
-    /// ⚠️ SENSITIVE: Only use this for encrypted storage!
+    /// ️ SENSITIVE: Only use this for encrypted storage!
     pub fn to_seed(&self) -> [u8; 64] {
         let mut seed = [0u8; 64];
         seed[0..32].copy_from_slice(&self.signing_key.to_bytes());

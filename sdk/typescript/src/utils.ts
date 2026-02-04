@@ -2,9 +2,7 @@
  * Utility functions for encoding, hashing, and byte manipulation
  */
 
-// ============================================================================
 // Hex Encoding
-// ============================================================================
 
 const HEX_CHARS = '0123456789abcdef';
 
@@ -42,9 +40,7 @@ export function hexToBytes(hex: string): Uint8Array {
   return bytes;
 }
 
-// ============================================================================
 // Base58 Encoding (Solana-compatible)
-// ============================================================================
 
 const BASE58_ALPHABET = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
 const BASE58_MAP = new Map<string, number>();
@@ -142,9 +138,7 @@ export function base58ToBytes(str: string): Uint8Array {
   return result;
 }
 
-// ============================================================================
 // Little-endian encoding for wincode compatibility
-// ============================================================================
 
 /**
  * Encode u64 as little-endian bytes
@@ -183,9 +177,7 @@ export function u32ToLeBytes(value: number): Uint8Array {
   return bytes;
 }
 
-// ============================================================================
 // Byte array utilities
-// ============================================================================
 
 /**
  * Concatenate multiple Uint8Arrays

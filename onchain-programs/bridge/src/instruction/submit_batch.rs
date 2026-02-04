@@ -260,7 +260,7 @@ pub fn process_submit_batch(
         return Err(ProgramError::InvalidInstructionData);
     }
 
-    // ==== CPI to Verifier Program ====
+    // CPI to Verifier Program
     // Build instruction data for verify_batch_proof
     let cpi_data = build_verify_instruction_data(&proof, &public_inputs);
 

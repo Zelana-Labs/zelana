@@ -18,9 +18,7 @@ import {
 } from './utils';
 import type { Bytes32, TransferRequest, WithdrawRequest } from './types';
 
-// ============================================================================
 // Human-Readable Message Builders
-// ============================================================================
 
 /**
  * Build a human-readable transfer message for signing.
@@ -69,9 +67,7 @@ Nonce: ${nonce.toString()}
 Sign to authorize this withdrawal to Solana L1.`;
 }
 
-// ============================================================================
 // Signer Interface
-// ============================================================================
 
 /**
  * Signer interface for L2 transactions.

@@ -1,0 +1,10 @@
+[package]
+name = "af_xdp"
+version = "0.1.0"
+edition = { workspace = true }
+
+[dependencies]
+aya-ebpf ={ workspace = true}
+
+[lib]
+crate-type = ["cdylib"]

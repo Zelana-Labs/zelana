@@ -69,7 +69,6 @@ fn main() -> Result<()> {
     }
 
     println!("Zelana L2 ZK Key Generation");
-    println!("===========================");
     println!();
 
     // Create a dummy circuit for setup

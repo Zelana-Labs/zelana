@@ -93,9 +93,7 @@ export class ZelanaClient {
     return this.signer?.publicKeyHex ?? null;
   }
 
-  // ==========================================================================
   // Health & Status
-  // ==========================================================================
 
   /**
    * Check if the sequencer is healthy
@@ -137,9 +135,7 @@ export class ZelanaClient {
     return this.api.getStats();
   }
 
-  // ==========================================================================
   // Account Operations
-  // ==========================================================================
 
   /**
    * Get account state for the configured signer
@@ -186,9 +182,7 @@ export class ZelanaClient {
     return account.pendingNonce ?? account.nonce;
   }
 
-  // ==========================================================================
   // Transfer Operations
-  // ==========================================================================
 
   /**
    * Transfer funds to another account
@@ -248,9 +242,7 @@ export class ZelanaClient {
     return this.transfer(to, amount, account.nonce);
   }
 
-  // ==========================================================================
   // Withdrawal Operations
-  // ==========================================================================
 
   /**
    * Withdraw funds to L1 (Solana)
@@ -301,9 +293,7 @@ export class ZelanaClient {
     return this.api.getFastWithdrawQuote(amount);
   }
 
-  // ==========================================================================
   // Transaction Queries
-  // ==========================================================================
 
   /**
    * Get transaction by hash
@@ -341,9 +331,7 @@ export class ZelanaClient {
     return this.api.listBatches(params);
   }
 
-  // ==========================================================================
   // Convenience Methods
-  // ==========================================================================
 
   /**
    * Wait for a transaction to reach a specific status
@@ -421,9 +409,7 @@ export class ZelanaClient {
     );
   }
 
-  // ==========================================================================
   // Dev Mode Methods (Testing Only)
-  // ==========================================================================
 
   /**
    * Simulate a deposit from L1 (DEV MODE ONLY)

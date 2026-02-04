@@ -5,25 +5,25 @@ This document describes how to build and run the Zelana prover layer, which gene
 ## Architecture Overview
 
 ```
-                    ┌─────────────────────────────────────────────┐
-                    │           COORDINATOR (Brain)               │
-                    │                                             │
-   Batch ──────────>│  1. Slice batch into chunks                 │
-   (100 txs)        │  2. Compute intermediate state roots        │
-                    │  3. Dispatch chunks to workers in parallel  │
-                    │  4. Collect proofs                          │
-                    │  5. Submit to Solana (batched)              │
-                    └─────────────────────────────────────────────┘
-                              │         │         │         │
+                    -----------------------------------------------
+                    -           COORDINATOR (Brain)               -
+                    -                                             -
+   Batch ---------->-  1. Slice batch into chunks                 -
+   (100 txs)        -  2. Compute intermediate state roots        -
+                    -  3. Dispatch chunks to workers in parallel  -
+                    -  4. Collect proofs                          -
+                    -  5. Submit to Solana (batched)              -
+                    -----------------------------------------------
+                              -         -         -         -
                               ▼         ▼         ▼         ▼
-                         ┌────────┐ ┌────────┐ ┌────────┐ ┌────────┐
-                         │Worker 1│ │Worker 2│ │Worker 3│ │Worker 4│
-                         └────────┘ └────────┘ └────────┘ └────────┘
-                              │         │         │         │
+                         ---------- ---------- ---------- ----------
+                         -Worker 1- -Worker 2- -Worker 3- -Worker 4-
+                         ---------- ---------- ---------- ----------
+                              -         -         -         -
                               ▼         ▼         ▼         ▼
-                         ┌─────────────────────────────────────────┐
-                         │              SOLANA (Verifier)          │
-                         └─────────────────────────────────────────┘
+                         -------------------------------------------
+                         -              SOLANA (Verifier)          -
+                         -------------------------------------------
 ```
 
 ## Prerequisites
@@ -53,20 +53,20 @@ Sunspot generates Groth16 proofs and compiles Solana verifier programs.
 
 ```
 zelana-forge/circuits/
-├── zelana_batch/        # Main batch validity circuit
-│   ├── Nargo.toml
-│   ├── src/
-│   │   └── main.nr      # Circuit entry point
-│   └── target/          # Build artifacts
-├── zelana_lib/          # Shared cryptographic primitives
-│   └── src/
-│       ├── poseidon.nr  # MiMC-based hash (hash_2, hash_3, hash_4)
-│       ├── merkle.nr    # 32-level Sparse Merkle Tree
-│       ├── nullifier.nr # Nullifier computation
-│       ├── account.nr   # Account state management
-│       └── signature.nr # Schnorr signature verification
-├── ownership/           # Client-side ownership proof (~500ms in WASM)
-└── batch_processor/     # Legacy batch processor
+--- zelana_batch/        # Main batch validity circuit
+-   --- Nargo.toml
+-   --- src/
+-   -   --- main.nr      # Circuit entry point
+-   --- target/          # Build artifacts
+--- zelana_lib/          # Shared cryptographic primitives
+-   --- src/
+-       --- poseidon.nr  # MiMC-based hash (hash_2, hash_3, hash_4)
+-       --- merkle.nr    # 32-level Sparse Merkle Tree
+-       --- nullifier.nr # Nullifier computation
+-       --- account.nr   # Account state management
+-       --- signature.nr # Schnorr signature verification
+--- ownership/           # Client-side ownership proof (~500ms in WASM)
+--- batch_processor/     # Legacy batch processor
 ```
 
 ### Main Batch Circuit

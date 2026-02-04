@@ -11,7 +11,6 @@
 
 fn main() {
     println!("Zelana L2 Prover");
-    println!("================");
     println!();
     println!("This standalone prover service is deprecated.");
     println!();

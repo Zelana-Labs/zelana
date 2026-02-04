@@ -39,7 +39,7 @@ pub async fn airdrop_if_needed(rpc: &RpcClient, pubkey: &Pubkey, name: &str) -> 
 
     if balance < MIN_BALANCE {
         println!(
-            "💸 Requesting airdrop of {:.2} SOL...",
+            " Requesting airdrop of {:.2} SOL...",
             MIN_BALANCE as f64 / LAMPORTS_PER_SOL
         );
         let sig = rpc.request_airdrop(pubkey, MIN_BALANCE)?;
@@ -65,11 +65,11 @@ pub async fn airdrop_if_needed(rpc: &RpcClient, pubkey: &Pubkey, name: &str) -> 
 
         let new_balance = rpc.get_balance(pubkey)?;
         println!(
-            "✅ Airdrop confirmed! New balance: {:.2} SOL",
+            " Airdrop confirmed! New balance: {:.2} SOL",
             new_balance as f64 / LAMPORTS_PER_SOL
         );
     } else {
-        println!("✓ Sufficient balance available");
+        println!(" Sufficient balance available");
     }
 
     Ok(())
@@ -83,7 +83,7 @@ pub async fn deposit_to_l2(
     amount: u64,
     nonce: u64,
 ) -> Result<String> {
-    println!("🌉 Depositing {} lamports to Bridge...", amount);
+    println!(" Depositing {} lamports to Bridge...", amount);
 
     let mut domain_padded = [0u8; 32];
     domain_padded[..DOMAIN.len()].copy_from_slice(DOMAIN);
@@ -101,7 +101,7 @@ pub async fn deposit_to_l2(
         program_id,
     );
 
-    println!("📍 PDAs:");
+    println!(" PDAs:");
     println!("  Config: {}", config_pda);
     println!("  Vault: {}", vault_pda);
     println!("  Receipt: {}", receipt_pda);
@@ -133,9 +133,9 @@ pub async fn deposit_to_l2(
         rpc.get_latest_blockhash()?,
     );
 
-    println!("📤 Sending bridge transaction...");
+    println!(" Sending bridge transaction...");
     let sig = rpc.send_and_confirm_transaction(&tx)?;
-    println!("✅ Bridge transaction confirmed!");
+    println!(" Bridge transaction confirmed!");
 
     Ok(sig.to_string())
 }
@@ -149,20 +149,20 @@ pub async fn airdrop_and_bridge_flow(
     let account_id = keypair.account_id();
     let solana_keypair = Keypair::solana_keypair(keypair);
 
-    println!("\n📋 Account Information:");
+    println!("\n Account Information:");
     println!("  Zelana Account ID: {}", account_id.to_hex());
     println!("  Solana Pubkey: {}", solana_keypair.pubkey());
 
     // Connect to Solana RPC
-    println!("\n🌐 Connecting to Solana RPC: {}", config.rpc_url);
+    println!("\n Connecting to Solana RPC: {}", config.rpc_url);
     let rpc = RpcClient::new_with_commitment(&config.rpc_url, CommitmentConfig::confirmed());
 
     // Step 1: Ensure sufficient balance
-    println!("\n💰 Step 1: Checking balance...");
+    println!("\n Step 1: Checking balance...");
     airdrop_if_needed(&rpc, &solana_keypair.pubkey(), "Account").await?;
 
     // Step 2: Bridge to L2
-    println!("\n🌉 Step 2: Bridging to L2...");
+    println!("\n Step 2: Bridging to L2...");
     let program_id = Pubkey::from_str(&config.bridge_program_id)?;
     println!("Bridge Program ID: {}", program_id);
 
@@ -174,7 +174,7 @@ pub async fn airdrop_and_bridge_flow(
 
     let sig = deposit_to_l2(&rpc, &program_id, &solana_keypair, amount, nonce).await?;
 
-    println!("\n🎉 Success!");
+    println!("\n Success!");
     println!("Transaction Signature: {}", sig);
     println!("L2 Account: {}", account_id.to_hex());
     println!("Amount Bridged: {} lamports", amount);

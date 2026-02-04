@@ -270,9 +270,7 @@ fn map_l1_to_l2(l1_key: Pubkey) -> AccountId {
     AccountId(bytes)
 }
 
-// ============================================================================
 // Legacy function for backward compatibility
-// ============================================================================
 
 /// Start the deposit indexer (legacy, direct DB update)
 ///

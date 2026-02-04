@@ -6,12 +6,12 @@
 //!
 //! ```text
 //! Transaction Flow:
-//! ┌─────────────────────────────────────────────────────────────────┐
-//! │ 1. Client encrypts tx to committee                              │
-//! │ 2. Sequencer orders encrypted txs (blind ordering)              │
-//! │ 3. At batch seal, committee decrypts in order                   │
-//! │ 4. Decrypted txs execute in committed order                     │
-//! └─────────────────────────────────────────────────────────────────┘
+//! -------------------------------------------------------------------
+//! - 1. Client encrypts tx to committee                              -
+//! - 2. Sequencer orders encrypted txs (blind ordering)              -
+//! - 3. At batch seal, committee decrypts in order                   -
+//! - 4. Decrypted txs execute in committed order                     -
+//! -------------------------------------------------------------------
 //! ```
 
 use std::sync::Arc;

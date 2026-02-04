@@ -61,7 +61,6 @@ pub struct Account {
 const ONCHAIN_VERIFIER_PROGRAM_ID: &str = "8TveT3mvH59qLzZNwrTT6hBqDHEobW2XnCPb7xZLBYHd"; // Replace if different
 // This should match the keypair used by your rollup_core settler or a dedicated payer
 const SETTLER_KEYPAIR_PATH: &str = "home/shanks/.config/solana/id.json"; // Example path
-// ====================================================================
 
 #[derive(Serialize)]
 struct ProofJson {
@@ -163,7 +162,7 @@ const VERIFYING_KEY_PATH: &str = "l2_circuit_real_hash.vk";
 #[tokio::main]
 async fn main() -> Result<()> {
     dotenv().ok();
-    println!("🚀 === Zelana L2 Prover Service (Real Commitment Circuit) ===\n");
+    println!(" === Zelana L2 Prover Service (Real Commitment Circuit) ===\n");
 
     let l2_db_dir = env::var("L2_DB_PATH").context("L2_DB_PATH not set")?;
     let rocks_path_str = format!("{}/rocksdb", l2_db_dir);
@@ -183,23 +182,23 @@ async fn main() -> Result<()> {
         &["accounts", "txs", "batches", "tx_by_sender", "tx_by_time"],
         false,
     )?);
-    println!("   ✅ Connected to L2 databases.");
+    println!("    Connected to L2 databases.");
 
     let poseidon_config = get_poseidon_config_offchain();
-    println!("   ✅ Loaded Poseidon parameters.");
+    println!("    Loaded Poseidon parameters.");
 
     // --- Load or Generate Proving Key FOR THE NEW CIRCUIT ---
     let pk = load_or_generate_proving_key(PROVING_KEY_PATH, VERIFYING_KEY_PATH, &poseidon_config)
         .await?;
-    println!("   ✅ Loaded/Generated proving key for the current circuit.");
+    println!("    Loaded/Generated proving key for the current circuit.");
 
     println!("\nPolling for pending batches...");
     loop {
         match find_and_process_pending_batch(&rocksdb, &sqlite_pool, &pk, &poseidon_config).await {
-            Ok(Some(id)) => println!("   ✅ Batch {} processed.", id),
+            Ok(Some(id)) => println!("    Batch {} processed.", id),
             Ok(None) => tokio::time::sleep(Duration::from_secs(POLL_INTERVAL_SECONDS)).await,
             Err(e) => {
-                eprintln!("   ❌ Error: {:?}. Retrying...", e);
+                eprintln!("    Error: {:?}. Retrying...", e);
                 tokio::time::sleep(Duration::from_secs(POLL_INTERVAL_SECONDS)).await;
             }
         }
@@ -275,7 +274,7 @@ async fn find_and_process_pending_batch(
             hex::encode(header.new_root)
         );
     }
-    println!("      ✅ Off-chain calculated new_root matches header.");
+    println!("       Off-chain calculated new_root matches header.");
 
     // --- Simulate Proof Generation ---
     println!(
@@ -326,7 +325,7 @@ async fn find_and_process_pending_batch(
     {
         Ok(l1_signature) => {
             println!(
-                "   ✅ Successfully settled batch {} on L1. Signature: {}",
+                "    Successfully settled batch {} on L1. Signature: {}",
                 batch_id, l1_signature
             );
             // Update SQLite status to Settled-OnChain
@@ -347,7 +346,7 @@ async fn find_and_process_pending_batch(
             }
         }
         Err(e) => {
-            eprintln!("   ❌ FAILED to settle batch {} on L1: {:?}", batch_id, e);
+            eprintln!("    FAILED to settle batch {} on L1: {:?}", batch_id, e);
             // Mark as failed in SQLite so we don't retry indefinitely
             sqlx::query("UPDATE batches SET proof_status = 'SettlementFailed', error_message = ? WHERE id = ?")
                  .bind(format!("L1 settlement error: {:?}", e))
@@ -661,6 +660,6 @@ async fn settle_on_l1(
         .send_and_confirm_transaction(&transaction)
         .await?;
 
-    println!("      ✅ Settlement transaction confirmed!");
+    println!("       Settlement transaction confirmed!");
     Ok(signature)
 }

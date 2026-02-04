@@ -25,9 +25,7 @@ echo -e "${GREEN}========================================${NC}"
 echo -e "${GREEN}       Zelana Sequencer Startup        ${NC}"
 echo -e "${GREEN}========================================${NC}"
 
-# ============================================================================
 # Configuration
-# ============================================================================
 
 # API Configuration
 export ZL_API_PORT=3001
@@ -62,9 +60,7 @@ export DEV_MODE=1
 # Logging
 export RUST_LOG=info,zelana_core=debug
 
-# ============================================================================
 # Pre-flight Checks
-# ============================================================================
 
 echo ""
 echo -e "${YELLOW}Pre-flight checks...${NC}"
@@ -96,9 +92,7 @@ echo "  Bridge Program:  $ZL_BRIDGE_PROGRAM"
 echo "  Verifier:        $ZL_VERIFIER_PROGRAM_ID"
 echo ""
 
-# ============================================================================
 # Start Sequencer
-# ============================================================================
 
 cd "$(dirname "$0")/.."
 cargo run --release -p zelana-core

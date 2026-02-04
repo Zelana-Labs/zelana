@@ -4,22 +4,22 @@
 //! Submits batch proofs and state roots to Solana L1.
 //!
 //! ```text
-//! ┌─────────────────────────────────────────────────────────────────┐
-//! │                    L1 Settlement Flow                           │
-//! │                                                                  │
-//! │  ┌────────────┐    ┌────────────┐    ┌────────────────────────┐ │
-//! │  │   Batch    │───▶│   Submit   │───▶│    Wait for            │ │
-//! │  │   Proved   │    │   to L1    │    │    Confirmation        │ │
-//! │  └────────────┘    └────────────┘    └────────────────────────┘ │
-//! │                          │                      │               │
-//! │                          ▼                      ▼               │
-//! │  ┌─────────────────────────────────────────────────────────┐   │
-//! │  │              Solana Bridge Program                       │   │
-//! │  │  • Verify ZK proof                                       │   │
-//! │  │  • Update state root                                     │   │
-//! │  │  • Process withdrawals (after challenge period)          │   │
-//! │  └─────────────────────────────────────────────────────────┘   │
-//! └─────────────────────────────────────────────────────────────────┘
+//! -------------------------------------------------------------------
+//! -                    L1 Settlement Flow                           -
+//! -                                                                  -
+//! -  --------------    --------------    -------------------------- -
+//! -  -   Batch    ----▶-   Submit   ----▶-    Wait for            - -
+//! -  -   Proved   -    -   to L1    -    -    Confirmation        - -
+//! -  --------------    --------------    -------------------------- -
+//! -                          -                      -               -
+//! -                          ▼                      ▼               -
+//! -  -----------------------------------------------------------   -
+//! -  -              Solana Bridge Program                       -   -
+//! -  -  • Verify ZK proof                                       -   -
+//! -  -  • Update state root                                     -   -
+//! -  -  • Process withdrawals (after challenge period)          -   -
+//! -  -----------------------------------------------------------   -
+//! -------------------------------------------------------------------
 //! ```
 
 use std::str::FromStr;
@@ -40,9 +40,7 @@ use tokio::sync::Mutex;
 
 use crate::sequencer::BatchProof;
 use crate::sequencer::TrackedWithdrawal;
-// ============================================================================
 // Configuration
-// ============================================================================
 
 /// Settler configuration
 #[derive(Debug, Clone)]
@@ -80,9 +78,7 @@ impl Default for SettlerConfig {
     }
 }
 
-// ============================================================================
 // Settlement Types
-// ============================================================================
 
 /// Result of a settlement submission
 #[derive(Debug, Clone)]
@@ -112,9 +108,7 @@ pub struct StateUpdateParams {
     pub proof: Vec<u8>,
 }
 
-// ============================================================================
 // Settler
-// ============================================================================
 
 /// L1 Settler service
 pub struct Settler {
@@ -889,9 +883,7 @@ pub struct WithdrawalExecutionResult {
     pub retries: u32,
 }
 
-// ============================================================================
 // Noir/Sunspot Proof Types
-// ============================================================================
 
 /// Sunspot verifier program ID (devnet verified)
 pub const SUNSPOT_VERIFIER_PROGRAM_ID: &str = "EZzyLrTrC4uyU488jVAs4GKeCR1s9GmoFggeiDqwDeNK";
@@ -998,9 +990,7 @@ pub struct L1State {
     pub shielded_root: [u8; 32],
 }
 
-// ============================================================================
 // Async Settler Service
-// ============================================================================
 
 /// Async wrapper for settlement operations
 pub struct SettlerService {
@@ -1119,9 +1109,7 @@ impl SettlerService {
     }
 }
 
-// ============================================================================
 // Mock Settler (for testing)
-// ============================================================================
 
 /// Mock settler for testing without L1
 pub struct MockSettler {

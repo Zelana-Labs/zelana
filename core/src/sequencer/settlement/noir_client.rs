@@ -6,24 +6,24 @@
 //! ## Architecture
 //!
 //! ```text
-//! ┌─────────────────────────────────────────────────────────────────────────┐
-//! │                         Core Sequencer                                   │
-//! │                                                                          │
-//! │   Pipeline → NoirProverClient::prove_async()                            │
-//! │                     │                                                    │
-//! │                     │ HTTP POST /v2/batch/prove                         │
-//! │                     ▼                                                    │
-//! └─────────────────────────────────────────────────────────────────────────┘
-//!                       │
+//! ---------------------------------------------------------------------------
+//! -                         Core Sequencer                                   -
+//! -                                                                          -
+//! -   Pipeline → NoirProverClient::prove_async()                            -
+//! -                     -                                                    -
+//! -                     - HTTP POST /v2/batch/prove                         -
+//! -                     ▼                                                    -
+//! ---------------------------------------------------------------------------
+//!                       -
 //!                       ▼
-//! ┌─────────────────────────────────────────────────────────────────────────┐
-//! │                    Prover Coordinator                                    │
-//! │   (zelana-forge/crates/prover-coordinator)                              │
-//! │                                                                          │
-//! │   POST /v2/batch/prove → job_id                                         │
-//! │   GET  /v2/batch/{job_id}/status → SSE stream                           │
-//! │   GET  /v2/batch/{job_id}/proof → CoreProofResult                       │
-//! └─────────────────────────────────────────────────────────────────────────┘
+//! ---------------------------------------------------------------------------
+//! -                    Prover Coordinator                                    -
+//! -   (zelana-forge/crates/prover-coordinator)                              -
+//! -                                                                          -
+//! -   POST /v2/batch/prove → job_id                                         -
+//! -   GET  /v2/batch/{job_id}/status → SSE stream                           -
+//! -   GET  /v2/batch/{job_id}/proof → CoreProofResult                       -
+//! ---------------------------------------------------------------------------
 //! ```
 
 use anyhow::{Context, Result, anyhow};
@@ -36,9 +36,7 @@ use super::mimc::MiMC;
 use super::prover::{BatchProof, BatchProver, BatchPublicInputs, BatchWitness};
 use zelana_transaction::TransactionType;
 
-// ============================================================================
 // Configuration
-// ============================================================================
 
 /// Configuration for the Noir prover client
 #[derive(Debug, Clone)]
@@ -64,9 +62,7 @@ impl Default for NoirProverConfig {
     }
 }
 
-// ============================================================================
 // API Types (matching prover-coordinator/src/core_api.rs)
-// ============================================================================
 
 /// Request to prove a batch
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -189,9 +185,7 @@ pub enum ProofJobState {
     Cancelled,
 }
 
-// ============================================================================
 // Noir Prover Client
-// ============================================================================
 
 /// Client for the Noir/Sunspot prover coordinator
 pub struct NoirProverClient {
@@ -604,9 +598,7 @@ impl NoirProverClient {
     }
 }
 
-// ============================================================================
 // BatchProver Trait Implementation
-// ============================================================================
 
 impl BatchProver for NoirProverClient {
     fn prove(&self, inputs: &BatchPublicInputs, witness: &BatchWitness) -> Result<BatchProof> {
@@ -639,9 +631,7 @@ impl BatchProver for NoirProverClient {
     }
 }
 
-// ============================================================================
 // Tests
-// ============================================================================
 
 #[cfg(test)]
 mod tests {

@@ -76,7 +76,6 @@ fn main() -> Result<()> {
     }
 
     println!("Zelana VK Conversion Tool");
-    println!("=========================");
     println!();
 
     // Check input exists

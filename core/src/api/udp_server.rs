@@ -27,9 +27,7 @@ use zephyr::packet::{KIND_SERVER_HELLO, Packet};
 
 use super::handlers::ApiState;
 
-// ============================================================================
 // Constants
-// ============================================================================
 
 /// Maximum UDP packet size
 const MAX_PACKET_SIZE: usize = 65535;
@@ -40,9 +38,7 @@ const SESSION_TIMEOUT: Duration = Duration::from_secs(300);
 /// Session cleanup interval
 const CLEANUP_INTERVAL: Duration = Duration::from_secs(60);
 
-// ============================================================================
 // Session Management
-// ============================================================================
 
 /// Per-client session state
 struct ClientSession {
@@ -75,9 +71,7 @@ impl ClientSession {
 /// Thread-safe session store
 type SessionStore = Arc<RwLock<HashMap<SocketAddr, ClientSession>>>;
 
-// ============================================================================
 // UDP Server
-// ============================================================================
 
 /// Zephyr UDP server configuration
 #[derive(Debug, Clone)]
@@ -370,9 +364,7 @@ impl ZephyrUdpServer {
     }
 }
 
-// ============================================================================
 // Helper to start UDP server from main
-// ============================================================================
 
 /// Start the Zephyr UDP server as a background task
 pub async fn start_udp_server(config: UdpServerConfig, api_state: ApiState) {

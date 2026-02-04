@@ -8,7 +8,7 @@ use ark_crypto_primitives::sponge::poseidon::{PoseidonConfig, find_poseidon_ark_
 /// Capacity: 1
 /// Security: 128 bits
 pub fn poseidon_config() -> PoseidonConfig<Fr> {
-    // === Poseidon parameter choices (standard) ===
+    // Poseidon parameter choices (standard)
     let prime_bits: u64 = 254; // BN254 Fr is a 254-bit prime field
     let rate: usize = 2;
     let capacity: usize = 1;

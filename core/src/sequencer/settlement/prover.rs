@@ -4,26 +4,26 @@
 //! Interface to the ZK prover for batch state transition proofs.
 //!
 //! ```text
-//! ┌─────────────────────────────────────────────────────────────────┐
-//! │                     Batch Proof                                  │
-//! │                                                                  │
-//! │  Public Inputs:                                                  │
-//! │  ┌────────────────────────────────────────────────────────────┐ │
-//! │  │ • pre_state_root      (transparent state before batch)     │ │
-//! │  │ • post_state_root     (transparent state after batch)      │ │
-//! │  │ • pre_shielded_root   (commitment tree before batch)       │ │
-//! │  │ • post_shielded_root  (commitment tree after batch)        │ │
-//! │  │ • withdrawal_root     (merkle root of withdrawals)         │ │
-//! │  │ • batch_hash          (hash of all transactions)           │ │
-//! │  └────────────────────────────────────────────────────────────┘ │
-//! │                                                                  │
-//! │  Private Witness:                                                │
-//! │  ┌────────────────────────────────────────────────────────────┐ │
-//! │  │ • All transactions (transfers, shielded, deposits, etc.)   │ │
-//! │  │ • Merkle proofs for account updates                        │ │
-//! │  │ • Individual shielded transaction proofs                   │ │
-//! │  └────────────────────────────────────────────────────────────┘ │
-//! └─────────────────────────────────────────────────────────────────┘
+//! -------------------------------------------------------------------
+//! -                     Batch Proof                                  -
+//! -                                                                  -
+//! -  Public Inputs:                                                  -
+//! -  -------------------------------------------------------------- -
+//! -  - • pre_state_root      (transparent state before batch)     - -
+//! -  - • post_state_root     (transparent state after batch)      - -
+//! -  - • pre_shielded_root   (commitment tree before batch)       - -
+//! -  - • post_shielded_root  (commitment tree after batch)        - -
+//! -  - • withdrawal_root     (merkle root of withdrawals)         - -
+//! -  - • batch_hash          (hash of all transactions)           - -
+//! -  -------------------------------------------------------------- -
+//! -                                                                  -
+//! -  Private Witness:                                                -
+//! -  -------------------------------------------------------------- -
+//! -  - • All transactions (transfers, shielded, deposits, etc.)   - -
+//! -  - • Merkle proofs for account updates                        - -
+//! -  - • Individual shielded transaction proofs                   - -
+//! -  -------------------------------------------------------------- -
+//! -------------------------------------------------------------------
 //! ```
 
 use anyhow::{Context, Result};
@@ -41,9 +41,7 @@ use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use ark_snark::SNARK;
 use ark_std::rand::{SeedableRng, rngs::StdRng};
 
-// ============================================================================
 // Proof Types
-// ============================================================================
 
 /// Public inputs for a batch proof
 #[derive(Debug, Clone)]
@@ -156,9 +154,7 @@ pub struct WithdrawalWitnessData {
     pub signature: Vec<u8>,
 }
 
-// ============================================================================
 // Prover Trait
-// ============================================================================
 
 /// Trait for ZK proof generation
 pub trait BatchProver: Send + Sync {
@@ -172,9 +168,7 @@ pub trait BatchProver: Send + Sync {
     fn verification_key_hash(&self) -> [u8; 32];
 }
 
-// ============================================================================
 // Mock Prover (MVP)
-// ============================================================================
 
 /// Mock prover for MVP - generates fake proofs
 ///
@@ -249,9 +243,7 @@ impl BatchProver for MockProver {
     }
 }
 
-// ============================================================================
 // Groth16 Prover (Real ZK Proving)
-// ============================================================================
 
 /// Real Groth16 prover using arkworks and BN254 curve
 ///
@@ -454,9 +446,7 @@ impl BatchProver for Groth16Prover {
     }
 }
 
-// ============================================================================
 // Async Prover Service
-// ============================================================================
 
 /// Request to prove a batch
 pub struct ProveRequest {
@@ -510,9 +500,7 @@ impl ProverService {
     }
 }
 
-// ============================================================================
 // Helper Functions
-// ============================================================================
 
 /// Build public inputs from a sealed batch
 pub fn build_public_inputs(batch: &Batch, withdrawal_root: [u8; 32]) -> Result<BatchPublicInputs> {

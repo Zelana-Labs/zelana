@@ -12,9 +12,7 @@ import {
   type AccountState,
 } from '@zelana/sdk';
 
-// ============================================================================
 // Types
-// ============================================================================
 
 export interface ZelanaContextValue {
   /** The Zelana client instance */
@@ -48,9 +46,7 @@ export interface ZelanaProviderProps {
   children: React.ReactNode;
 }
 
-// ============================================================================
 // Context
-// ============================================================================
 
 const ZelanaContext = createContext<ZelanaContextValue | null>(null);
 
@@ -65,9 +61,7 @@ export function useZelanaContext(): ZelanaContextValue {
   return context;
 }
 
-// ============================================================================
 // Provider
-// ============================================================================
 
 /**
  * Zelana Provider Component

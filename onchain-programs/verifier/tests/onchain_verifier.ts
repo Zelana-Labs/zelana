@@ -137,7 +137,7 @@ describe("onchain_verifier", () => {
         program.programId
       );
 
-      console.log("🔍 Testing with real proof data:");
+      console.log(" Testing with real proof data:");
       console.log("  • Proof description:", PROOF_DATA.description);
       console.log("  • Public input (y):", PROOF_DATA.public_inputs.inputs[0]);
       console.log("  • VK nPublic:", VK_DATA.nPublic);
@@ -153,7 +153,7 @@ describe("onchain_verifier", () => {
           .signers([authority])
           .rpc();
 
-        console.log("✅ Real proof verification succeeded:", tx);
+        console.log(" Real proof verification succeeded:", tx);
 
         // Verify the account was created and data stored
         const storedAccount = await program.account.verifiedGroth16Proof.fetch(
@@ -216,7 +216,7 @@ describe("onchain_verifier", () => {
 
         expect.fail("Should have thrown an error for mismatched IC length");
       } catch (error) {
-        console.log("✅ Expected error for invalid IC length:", error.message);
+        console.log(" Expected error for invalid IC length:", error.message);
         expect(error.message).to.include("InvalidPublicInput");
       }
     });
@@ -267,7 +267,7 @@ describe("onchain_verifier", () => {
         expect.fail("Should have thrown an error for invalid field elements");
       } catch (error) {
         console.log(
-          "✅ Expected error for invalid field elements:",
+          " Expected error for invalid field elements:",
           error.message
         );
         // Could be transaction size limit or InvalidPublicInput
@@ -323,7 +323,7 @@ describe("onchain_verifier", () => {
         expect.fail("Should have thrown an error for invalid proof");
       } catch (error) {
         console.log(
-          "✅ Expected error for invalid proof verification:",
+          " Expected error for invalid proof verification:",
           error.message
         );
         // Could be ArithmeticError, PairingError, VerificationError, or transaction size limit
@@ -361,7 +361,7 @@ describe("onchain_verifier", () => {
         program.programId
       );
 
-      console.log("🔍 Testing with real RISC0 proof data:");
+      console.log(" Testing with real RISC0 proof data:");
       console.log("  • Proof description:", RISC0_DATA.description);
       console.log("  • Source:", RISC0_DATA.source);
       console.log("  • Image ID length:", realImageId.length, "bytes");
@@ -388,7 +388,7 @@ describe("onchain_verifier", () => {
           .signers([authority])
           .rpc();
 
-        console.log("✅ Real RISC0 verification succeeded:", tx);
+        console.log(" Real RISC0 verification succeeded:", tx);
 
         // Verify the account was created and data stored
         const storedAccount = await program.account.verifiedRisc0Proof.fetch(
@@ -401,7 +401,7 @@ describe("onchain_verifier", () => {
         expect(storedAccount.journalDigest).to.deep.equal(realJournalDigest);
         expect(storedAccount.verifiedAt.toNumber()).to.be.greaterThan(0);
 
-        console.log("✅ Real RISC0 proof verification and storage successful!");
+        console.log(" Real RISC0 proof verification and storage successful!");
       } catch (error) {
         console.log("Real RISC0 verification result:", error.message);
         // Note: Currently simplified verification, but test shows data flow works
@@ -448,7 +448,7 @@ describe("onchain_verifier", () => {
           .signers([authority])
           .rpc();
 
-        console.log("✅ RISC0 alternative test verification succeeded:", tx);
+        console.log(" RISC0 alternative test verification succeeded:", tx);
 
         // Verify account was created
         const storedAccount = await program.account.verifiedRisc0Proof.fetch(
@@ -460,7 +460,7 @@ describe("onchain_verifier", () => {
         expect(storedAccount.imageId).to.deep.equal(altImageId);
         expect(storedAccount.journalDigest).to.deep.equal(altJournalDigest);
 
-        console.log("✅ Alternative RISC0 proof test successful!");
+        console.log(" Alternative RISC0 proof test successful!");
       } catch (error) {
         console.log("Alternative RISC0 verification result:", error.message);
         // Note: Currently simplified verification, but test shows data handling works

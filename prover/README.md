@@ -5,9 +5,9 @@ A minimal Rust implementation demonstrating zero-knowledge proofs using the Grot
 ## What This Demonstrates
 
 **Zero-Knowledge Properties:**
-- ✅ **Completeness**: Valid proofs always verify
-- ✅ **Soundness**: Invalid proofs cannot be forged  
-- ✅ **Zero-Knowledge**: No information about the secret is revealed
+-  **Completeness**: Valid proofs always verify
+-  **Soundness**: Invalid proofs cannot be forged  
+-  **Zero-Knowledge**: No information about the secret is revealed
 
 **Real-World Application**: This pattern is fundamental to many blockchain privacy solutions, identity systems, and confidential computations.
 
@@ -51,8 +51,8 @@ Constraints: 1 variables, 1 constraints
 Running trusted setup...
 Setup complete
 Generating proof...
-✅ Proof generated
-🔍 Verification result: true
+ Proof generated
+ Verification result: true
 Exported proof (192 bytes) to proof.json
 Exported verifying key (573 bytes) to vk.json
 ```
@@ -117,10 +117,10 @@ This is a minimal educational example. For production use, consider:
 
 ## Resources
 
-- 📚 [Arkworks Documentation](https://arkworks.rs/)
-- 🔗 [ZK Learning Resources](https://zkp.science/)
-- 📖 [Groth16 Paper](https://eprint.iacr.org/2016/260.pdf)
-- 🛠️ [Circom](https://github.com/iden3/circom) - Alternative circuit language
+-  [Arkworks Documentation](https://arkworks.rs/)
+-  [ZK Learning Resources](https://zkp.science/)
+-  [Groth16 Paper](https://eprint.iacr.org/2016/260.pdf)
+- ️ [Circom](https://github.com/iden3/circom) - Alternative circuit language
 
 ## License
 

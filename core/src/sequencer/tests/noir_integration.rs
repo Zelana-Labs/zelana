@@ -34,9 +34,7 @@ use crate::sequencer::settlement::settler::{
 };
 use zelana_account::AccountId;
 
-// ============================================================================
 // Test Helpers
-// ============================================================================
 
 fn temp_db() -> (TempDir, Arc<RocksDbStore>) {
     let dir = TempDir::new().unwrap();
@@ -72,9 +70,7 @@ fn mock_noir_proof(batch_id: u64) -> BatchProof {
     }
 }
 
-// ============================================================================
 // NoirProverConfig Tests
-// ============================================================================
 
 #[test]
 fn test_noir_prover_config_default() {
@@ -95,9 +91,7 @@ fn test_noir_prover_config_custom() {
     assert_eq!(config.proof_timeout.as_secs(), 600);
 }
 
-// ============================================================================
 // Proof Format Detection Tests
-// ============================================================================
 
 #[test]
 fn test_proof_format_detection_groth16() {
@@ -137,9 +131,7 @@ fn test_noir_proof_data_from_groth16_fails() {
     assert!(result.is_err());
 }
 
-// ============================================================================
 // Pipeline Config Tests
-// ============================================================================
 
 #[test]
 fn test_pipeline_config_prover_mode_default() {
@@ -164,9 +156,7 @@ fn test_pipeline_config_noir_mode() {
     assert_eq!(config.noir_proof_timeout_secs, Some(600));
 }
 
-// ============================================================================
 // NoirProverClient Request Building Tests
-// ============================================================================
 
 #[test]
 fn test_core_batch_prove_request_serialization() {
@@ -190,9 +180,7 @@ fn test_core_batch_prove_request_serialization() {
     assert_eq!(parsed.batch_id, 42);
 }
 
-// ============================================================================
 // Sunspot Verifier Constants Tests
-// ============================================================================
 
 #[test]
 fn test_sunspot_verifier_program_id() {
@@ -213,9 +201,7 @@ fn test_sunspot_verifier_program_id() {
     );
 }
 
-// ============================================================================
 // NoirProverClient Integration Tests (requires running coordinator)
-// ============================================================================
 
 /// Test that NoirProverClient can be constructed
 #[test]
@@ -298,9 +284,7 @@ async fn test_noir_prover_client_prove_batch() {
     }
 }
 
-// ============================================================================
 // Pipeline with Noir Prover Tests
-// ============================================================================
 
 #[tokio::test]
 async fn test_pipeline_noir_mode_config() {

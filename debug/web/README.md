@@ -14,11 +14,11 @@ A modern web-based debug inspector for the Zelana L2 sequencer database.
 ## Architecture
 
 ```
-┌─────────────────────┐     ┌─────────────────────┐     ┌─────────────────┐
-│   React Frontend    │────▶│   Bun.js Server     │────▶│  Rust DB Reader │
-│   (Vite + React)    │     │   (Hono)            │     │  (RocksDB)      │
-│   Port: 5173        │     │   Port: 3456        │     │  Port: 3457     │
-└─────────────────────┘     └─────────────────────┘     └─────────────────┘
+-----------------------     -----------------------     -------------------
+-   React Frontend    -----▶-   Bun.js Server     -----▶-  Rust DB Reader -
+-   (Vite + React)    -     -   (Hono)            -     -  (RocksDB)      -
+-   Port: 5173        -     -   Port: 3456        -     -  Port: 3457     -
+-----------------------     -----------------------     -------------------
 ```
 
 ## Prerequisites
@@ -119,20 +119,20 @@ The server will serve the built frontend from `client/dist/`.
 
 ```
 debug/web/
-├── package.json          # Root package
-├── server/               # Bun.js backend
-│   ├── index.ts          # Server entry point
-│   ├── db/client.ts      # TCP client for DB reader
-│   └── ws/handler.ts     # WebSocket handler
-├── client/               # React frontend
-│   ├── src/
-│   │   ├── components/   # React components
-│   │   ├── pages/        # Page components
-│   │   ├── lib/          # API client & utilities
-│   │   └── hooks/        # React hooks
-│   └── public/           # Static assets
-└── db-reader/            # Rust RocksDB server
-    └── src/main.rs       # TCP server implementation
+--- package.json          # Root package
+--- server/               # Bun.js backend
+-   --- index.ts          # Server entry point
+-   --- db/client.ts      # TCP client for DB reader
+-   --- ws/handler.ts     # WebSocket handler
+--- client/               # React frontend
+-   --- src/
+-   -   --- components/   # React components
+-   -   --- pages/        # Page components
+-   -   --- lib/          # API client & utilities
+-   -   --- hooks/        # React hooks
+-   --- public/           # Static assets
+--- db-reader/            # Rust RocksDB server
+    --- src/main.rs       # TCP server implementation
 ```
 
 ### Adding New Data Views

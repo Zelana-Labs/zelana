@@ -174,7 +174,7 @@ async fn main() -> anyhow::Result<()> {
         new_balance as f64 / 1_000_000_000.0
     );
 
-    println!("\n📋 Deposit Summary:");
+    println!("\n Deposit Summary:");
     println!("  Amount: {} SOL", amount_sol);
     println!("  Nonce: {}", nonce);
     println!("  Receipt PDA: {}", receipt_pda);

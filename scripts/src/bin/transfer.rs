@@ -190,7 +190,7 @@ async fn main() -> anyhow::Result<()> {
         }
     }
 
-    println!("\n📋 Transfer Summary:");
+    println!("\n Transfer Summary:");
     println!("  From: {}", payer.pubkey());
     println!("  To: {}", to_pubkey);
     println!("  Amount: {} SOL", amount_lamports as f64 / 1_000_000_000.0);

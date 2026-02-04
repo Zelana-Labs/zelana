@@ -1,7 +1,7 @@
 [package]
 name = "zelana-ownership-prover"
 version = "0.1.0"
-edition = "2021"
+edition = { workspace = true }
 description = "WASM prover for ownership circuit - client-side proof generation"
 repository = "https://github.com/zelana-labs/zelana"
 
@@ -34,7 +34,3 @@ hex = "0.4"
 
 [dev-dependencies]
 wasm-bindgen-test = "0.3"
-
-[profile.release]
-lto = true
-opt-level = "s"  # Optimize for size

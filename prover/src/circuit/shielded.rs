@@ -141,7 +141,7 @@ impl Default for ShieldedTransferCircuit {
 
 impl ConstraintSynthesizer<Fr> for ShieldedTransferCircuit {
     fn generate_constraints(self, cs: ConstraintSystemRef<Fr>) -> Result<(), SynthesisError> {
-        // === Allocate Public Inputs ===
+        // Allocate Public Inputs
 
         // Merkle root
         let merkle_root_bytes = self.merkle_root.ok_or(SynthesisError::AssignmentMissing)?;
@@ -169,12 +169,12 @@ impl ConstraintSynthesizer<Fr> for ShieldedTransferCircuit {
         let fee = self.fee.ok_or(SynthesisError::AssignmentMissing)?;
         let fee_var = FpVar::new_input(cs.clone(), || Ok(Fr::from(fee)))?;
 
-        // === Allocate Private Witness ===
+        // Allocate Private Witness
 
         let inputs = self.inputs.ok_or(SynthesisError::AssignmentMissing)?;
         let outputs = self.outputs.ok_or(SynthesisError::AssignmentMissing)?;
 
-        // === Process Inputs ===
+        // Process Inputs
         let mut total_input_value = FpVar::zero();
 
         for (i, input) in inputs.iter().enumerate() {
@@ -231,7 +231,7 @@ impl ConstraintSynthesizer<Fr> for ShieldedTransferCircuit {
             total_input_value = total_input_value + &value_var;
         }
 
-        // === Process Outputs ===
+        // Process Outputs
         let mut total_output_value = FpVar::zero();
 
         for (i, output) in outputs.iter().enumerate() {
@@ -260,7 +260,7 @@ impl ConstraintSynthesizer<Fr> for ShieldedTransferCircuit {
             total_output_value = total_output_value + &value_var;
         }
 
-        // === Balance Constraint ===
+        // Balance Constraint
         // sum(inputs) = sum(outputs) + fee
         let expected_input = &total_output_value + &fee_var;
         total_input_value.enforce_equal(&expected_input)?;

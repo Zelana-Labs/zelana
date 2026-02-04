@@ -280,47 +280,47 @@ fn derive_aead_key(my_secret: &StaticSecret, their_pub: &PublicKey) -> [u8; 32] 
 ### Creation to Finalization Flow
 
 ```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                         CLIENT SIDE                                      │
-├─────────────────────────────────────────────────────────────────────────┤
-│ 1. Create TransactionData (from, to, amount, nonce, chain_id)           │
-│ 2. Sign with Ed25519 → SignedTransaction                                │
-│ 3. Encrypt with ChaCha20-Poly1305 → EncryptedTxBlobV1                   │
-│ 4. POST to /submit_tx                                                    │
-└─────────────────────────────────────────────────────────────────────────┘
-                                    │
+---------------------------------------------------------------------------
+-                         CLIENT SIDE                                      -
+---------------------------------------------------------------------------
+- 1. Create TransactionData (from, to, amount, nonce, chain_id)           -
+- 2. Sign with Ed25519 → SignedTransaction                                -
+- 3. Encrypt with ChaCha20-Poly1305 → EncryptedTxBlobV1                   -
+- 4. POST to /submit_tx                                                    -
+---------------------------------------------------------------------------
+                                    -
                                     ▼
-┌─────────────────────────────────────────────────────────────────────────┐
-│                       SEQUENCER INGEST                                   │
-├─────────────────────────────────────────────────────────────────────────┤
-│ 5. Deserialize EncryptedTxBlobV1                                        │
-│ 6. Compute tx_hash = SHA256(blob)                                       │
-│ 7. Decrypt → SignedTransaction                                          │
-│ 8. Validate chain_id                                                     │
-└─────────────────────────────────────────────────────────────────────────┘
-                                    │
+---------------------------------------------------------------------------
+-                       SEQUENCER INGEST                                   -
+---------------------------------------------------------------------------
+- 5. Deserialize EncryptedTxBlobV1                                        -
+- 6. Compute tx_hash = SHA256(blob)                                       -
+- 7. Decrypt → SignedTransaction                                          -
+- 8. Validate chain_id                                                     -
+---------------------------------------------------------------------------
+                                    -
                                     ▼
-┌─────────────────────────────────────────────────────────────────────────┐
-│                       EXECUTOR                                           │
-├─────────────────────────────────────────────────────────────────────────┤
-│ 9. Load sender/receiver state from DB (or cache)                        │
-│ 10. Validate: balance >= amount, nonce matches                          │
-│ 11. Update in-memory state                                               │
-│ 12. Return ExecutionResult with StateDiff                               │
-└─────────────────────────────────────────────────────────────────────────┘
-                                    │
+---------------------------------------------------------------------------
+-                       EXECUTOR                                           -
+---------------------------------------------------------------------------
+- 9. Load sender/receiver state from DB (or cache)                        -
+- 10. Validate: balance >= amount, nonce matches                          -
+- 11. Update in-memory state                                               -
+- 12. Return ExecutionResult with StateDiff                               -
+---------------------------------------------------------------------------
+                                    -
                                     ▼
-┌─────────────────────────────────────────────────────────────────────────┐
-│                       SESSION                                            │
-├─────────────────────────────────────────────────────────────────────────┤
-│ 13. Push ExecutionResult to session                                      │
-│ 14. Persist encrypted blob to DB                                         │
-│ 15. When tx_count >= MAX_TX_PER_BLOCK (2):                              │
-│     - Compute new_root from state                                        │
-│     - Apply state diff to DB                                             │
-│     - Close session → ClosedSession                                      │
-│     - Store BlockHeader                                                  │
-└─────────────────────────────────────────────────────────────────────────┘
+---------------------------------------------------------------------------
+-                       SESSION                                            -
+---------------------------------------------------------------------------
+- 13. Push ExecutionResult to session                                      -
+- 14. Persist encrypted blob to DB                                         -
+- 15. When tx_count >= MAX_TX_PER_BLOCK (2):                              -
+-     - Compute new_root from state                                        -
+-     - Apply state diff to DB                                             -
+-     - Close session → ClosedSession                                      -
+-     - Store BlockHeader                                                  -
+---------------------------------------------------------------------------
 ```
 
 ### Block Header Structure

@@ -5,15 +5,15 @@
 //!
 //! ```text
 //! Standard Withdrawal Flow:
-//! ┌─────────────────────────────────────────────────────────────────┐
-//! │ User → L2 Withdraw → Wait 7 days (challenge period) → L1 Funds │
-//! └─────────────────────────────────────────────────────────────────┘
+//! -------------------------------------------------------------------
+//! - User → L2 Withdraw → Wait 7 days (challenge period) → L1 Funds -
+//! -------------------------------------------------------------------
 //!
 //! Fast Withdrawal Flow:
-//! ┌─────────────────────────────────────────────────────────────────┐
-//! │ User → L2 Withdraw → LP fronts L1 funds (immediate) → User     │
-//! │                    → LP claims after challenge period           │
-//! └─────────────────────────────────────────────────────────────────┘
+//! -------------------------------------------------------------------
+//! - User → L2 Withdraw → LP fronts L1 funds (immediate) → User     -
+//! -                    → LP claims after challenge period           -
+//! -------------------------------------------------------------------
 //! ```
 //!
 //! LPs stake capital on L1 and front funds to users for a fee.

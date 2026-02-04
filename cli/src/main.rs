@@ -26,14 +26,14 @@ async fn main() {
         "dev" => {
             let config = parse_dev_args(&args[2..]);
             if let Err(e) = dev::run_dev(config).await {
-                eprintln!("❌ Error running dev environment: {}", e);
+                eprintln!(" Error running dev environment: {}", e);
                 std::process::exit(1);
             }
         }
         "test" => {
             let config = parse_test_args(&args[2..]);
             if let Err(e) = dev::run_tests(config).await {
-                eprintln!("❌ Error running tests: {}", e);
+                eprintln!(" Error running tests: {}", e);
                 std::process::exit(1);
             }
         }
@@ -51,14 +51,14 @@ async fn main() {
             };
 
             if let Err(e) = dev::deploy(network, keypair).await {
-                eprintln!("❌ Error deploying: {}", e);
+                eprintln!(" Error deploying: {}", e);
                 std::process::exit(1);
             }
         }
         "genkey" => {
             let filename = args.get(2).cloned();
             if let Err(e) = genkey(filename) {
-                eprintln!("❌ Error generating key: {}", e);
+                eprintln!(" Error generating key: {}", e);
                 std::process::exit(1);
             }
         }
@@ -73,7 +73,7 @@ async fn main() {
             let amount: u64 = match args[2].parse() {
                 Ok(amt) => amt,
                 Err(_) => {
-                    eprintln!("❌ Error: Amount must be a valid number");
+                    eprintln!(" Error: Amount must be a valid number");
                     return;
                 }
             };
@@ -81,7 +81,7 @@ async fn main() {
             let filename = args.get(3).cloned();
 
             if let Err(e) = airdrop(amount, filename).await {
-                eprintln!("❌ Error during airdrop and bridge: {}", e);
+                eprintln!(" Error during airdrop and bridge: {}", e);
                 std::process::exit(1);
             }
         }
@@ -96,7 +96,7 @@ async fn main() {
             print_usage();
         }
         _ => {
-            println!("❌ Unknown command: {}", cmd);
+            println!(" Unknown command: {}", cmd);
             println!();
             print_usage();
             std::process::exit(1);
@@ -245,7 +245,7 @@ fn genkey(filename: Option<String>) -> anyhow::Result<()> {
     // Create directory if it doesn't exist
     if !config_dir.exists() {
         fs::create_dir_all(&config_dir)?;
-        println!("📁 Created directory: {}", config_dir.display());
+        println!(" Created directory: {}", config_dir.display());
 
         #[cfg(unix)]
         {
@@ -264,7 +264,7 @@ fn genkey(filename: Option<String>) -> anyhow::Result<()> {
         ));
     }
 
-    println!("🔐 Generating new keypair...");
+    println!(" Generating new keypair...");
     let key = Keypair::new_random();
     let pubkeys = key.public_keys().as_bs58();
 
@@ -290,8 +290,8 @@ fn genkey(filename: Option<String>) -> anyhow::Result<()> {
 
     f.write_all(json.as_bytes())?;
 
-    println!("✅ Wrote new keypair to {}", key_path.display());
-    println!("🔑 Public keys: {:?}", pubkeys);
+    println!(" Wrote new keypair to {}", key_path.display());
+    println!(" Public keys: {:?}", pubkeys);
 
     Ok(())
 }
@@ -299,7 +299,7 @@ fn genkey(filename: Option<String>) -> anyhow::Result<()> {
 fn add(a: &str, b: &str) {
     match (a.parse::<i32>(), b.parse::<i32>()) {
         (Ok(x), Ok(y)) => println!("{} + {} = {}", x, y, x + y),
-        _ => println!("❌ Error: Both arguments must be numbers"),
+        _ => println!(" Error: Both arguments must be numbers"),
     }
 }
 
@@ -322,7 +322,7 @@ async fn airdrop(amount: u64, filename: Option<String>) -> anyhow::Result<()> {
     };
 
     // Load the keypair
-    println!("🔑 Loading keypair from {}...", key_path.display());
+    println!(" Loading keypair from {}...", key_path.display());
     let keypair = Keypair::from_file(
         key_path
             .to_str()

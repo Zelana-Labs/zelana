@@ -6,35 +6,35 @@
 //! ## Architecture
 //!
 //! ```text
-//! ┌─────────────────────────────────────────────────────────────────────────────┐
-//! │                           RocksDB Column Families                            │
-//! ├─────────────────────────────────────────────────────────────────────────────┤
-//! │                                                                              │
-//! │  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────────────────┐  │
-//! │  │    ACCOUNTS     │  │     BLOCKS      │  │         TX_INDEX            │  │
-//! │  │  Key: [u8;32]   │  │  Key: u64 (BE)  │  │  Key: [u8;32] (tx_hash)     │  │
-//! │  │  Val: AccState  │  │  Val: BlockHdr  │  │  Val: TxSummary (JSON)      │  │
-//! │  └─────────────────┘  └─────────────────┘  └─────────────────────────────┘  │
-//! │                                                                              │
-//! │  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────────────────┐  │
-//! │  │   NULLIFIERS    │  │   COMMITMENTS   │  │      ENCRYPTED_NOTES        │  │
-//! │  │  Key: [u8;32]   │  │  Key: u32 (BE)  │  │  Key: [u8;32] (commitment)  │  │
-//! │  │  Val: [] (flag) │  │  Val: [u8;32]   │  │  Val: EncNote (JSON)        │  │
-//! │  └─────────────────┘  └─────────────────┘  └─────────────────────────────┘  │
-//! │                                                                              │
-//! │  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────────────────┐  │
-//! │  │   WITHDRAWALS   │  │    TREE_META    │  │     PROCESSED_DEPOSITS      │  │
-//! │  │  Key: [u8;32]   │  │  Key: string    │  │  Key: u64 (L1 seq, BE)      │  │
-//! │  │  Val: bytes     │  │  Val: varies    │  │  Val: u64 (slot, BE)        │  │
-//! │  └─────────────────┘  └─────────────────┘  └─────────────────────────────┘  │
-//! │                                                                              │
-//! │  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────────────────┐  │
-//! │  │     BATCHES     │  │    TX_BLOBS     │  │       INDEXER_META          │  │
-//! │  │  Key: u64 (BE)  │  │  Key: [u8;32]   │  │  Key: string                │  │
-//! │  │  Val: JSON      │  │  Val: enc blob  │  │  Val: u64 (slot)            │  │
-//! │  └─────────────────┘  └─────────────────┘  └─────────────────────────────┘  │
-//! │                                                                              │
-//! └─────────────────────────────────────────────────────────────────────────────┘
+//! -------------------------------------------------------------------------------
+//! -                           RocksDB Column Families                            -
+//! -------------------------------------------------------------------------------
+//! -                                                                              -
+//! -  -------------------  -------------------  -------------------------------  -
+//! -  -    ACCOUNTS     -  -     BLOCKS      -  -         TX_INDEX            -  -
+//! -  -  Key: [u8;32]   -  -  Key: u64 (BE)  -  -  Key: [u8;32] (tx_hash)     -  -
+//! -  -  Val: AccState  -  -  Val: BlockHdr  -  -  Val: TxSummary (JSON)      -  -
+//! -  -------------------  -------------------  -------------------------------  -
+//! -                                                                              -
+//! -  -------------------  -------------------  -------------------------------  -
+//! -  -   NULLIFIERS    -  -   COMMITMENTS   -  -      ENCRYPTED_NOTES        -  -
+//! -  -  Key: [u8;32]   -  -  Key: u32 (BE)  -  -  Key: [u8;32] (commitment)  -  -
+//! -  -  Val: [] (flag) -  -  Val: [u8;32]   -  -  Val: EncNote (JSON)        -  -
+//! -  -------------------  -------------------  -------------------------------  -
+//! -                                                                              -
+//! -  -------------------  -------------------  -------------------------------  -
+//! -  -   WITHDRAWALS   -  -    TREE_META    -  -     PROCESSED_DEPOSITS      -  -
+//! -  -  Key: [u8;32]   -  -  Key: string    -  -  Key: u64 (L1 seq, BE)      -  -
+//! -  -  Val: bytes     -  -  Val: varies    -  -  Val: u64 (slot, BE)        -  -
+//! -  -------------------  -------------------  -------------------------------  -
+//! -                                                                              -
+//! -  -------------------  -------------------  -------------------------------  -
+//! -  -     BATCHES     -  -    TX_BLOBS     -  -       INDEXER_META          -  -
+//! -  -  Key: u64 (BE)  -  -  Key: [u8;32]   -  -  Key: string                -  -
+//! -  -  Val: JSON      -  -  Val: enc blob  -  -  Val: u64 (slot)            -  -
+//! -  -------------------  -------------------  -------------------------------  -
+//! -                                                                              -
+//! -------------------------------------------------------------------------------
 //! ```
 //!
 //! ## Column Families Reference
@@ -90,9 +90,7 @@ use zelana_account::{AccountId, AccountState};
 use zelana_block::BlockHeader;
 use zelana_privacy::{EncryptedNote, Nullifier, TREE_DEPTH};
 
-// =============================================================================
 // Column Family Names
-// =============================================================================
 
 /// Account state: balance and nonce per L2 address
 /// Key: [u8; 32] (AccountId), Value: wincode(AccountState)
@@ -150,9 +148,7 @@ const CF_STATS: &str = "stats";
 /// Key: [u8; 32] (blinded_proxy), Value: JSON(DelegationInfo)
 const CF_DELEGATIONS: &str = "delegations";
 
-// =============================================================================
 // RocksDbStore
-// =============================================================================
 
 /// A thread-safe wrapper around RocksDB for L2 state persistence.
 ///
@@ -273,9 +269,7 @@ impl RocksDbStore {
         Ok(())
     }
 
-    // =========================================================================
     // Shielded State Methods
-    // =========================================================================
 
     /// Insert a commitment at a position
     pub fn insert_commitment(&self, position: u32, commitment: [u8; 32]) -> Result<()> {
@@ -488,9 +482,7 @@ impl RocksDbStore {
         }
     }
 
-    // =========================================================================
     // Withdrawal Methods
-    // =========================================================================
 
     /// Store a pending withdrawal
     pub fn store_withdrawal(&self, tx_hash: [u8; 32], data: &[u8]) -> Result<()> {
@@ -543,9 +535,7 @@ impl RocksDbStore {
         Ok(withdrawals)
     }
 
-    // =========================================================================
     // Delegation Methods (Split Proving)
-    // =========================================================================
 
     /// Store a delegation request for Swarm processing
     ///
@@ -624,9 +614,7 @@ impl RocksDbStore {
         Ok(delegations)
     }
 
-    // =========================================================================
     // Deposit Indexer Methods
-    // =========================================================================
 
     /// Check if a deposit has already been processed (by L1 sequence number)
     pub fn is_deposit_processed(&self, l1_seq: u64) -> Result<bool> {
@@ -679,9 +667,7 @@ impl RocksDbStore {
         Ok(())
     }
 
-    // =========================================================================
     // Batch Operations
-    // =========================================================================
 
     /// Atomically apply a batch of operations
     pub fn apply_batch(&self, operations: DbBatch) -> Result<()> {
@@ -754,9 +740,7 @@ impl RocksDbStore {
         Ok(accounts)
     }
 
-    // =========================================================================
     // Batch Query Methods
-    // =========================================================================
 
     /// Store a batch summary
     pub fn store_batch_summary(&self, summary: &BatchSummary) -> Result<()> {
@@ -854,9 +838,7 @@ impl RocksDbStore {
         Ok(count)
     }
 
-    // =========================================================================
     // Transaction Index Methods
-    // =========================================================================
 
     /// Store a transaction summary
     pub fn store_tx_summary(&self, tx_hash: &[u8; 32], summary: &TxSummary) -> Result<()> {
@@ -985,9 +967,7 @@ impl RocksDbStore {
         Ok(())
     }
 
-    // =========================================================================
     // Statistics Methods
-    // =========================================================================
 
     /// Get global statistics
     pub fn get_global_stats(&self) -> Result<(u64, u64)> {
@@ -1016,9 +996,7 @@ impl RocksDbStore {
         Ok(count)
     }
 
-    // =========================================================================
     // Deposit/Withdrawal Statistics
-    // =========================================================================
 
     /// Add to dev deposits total
     pub fn add_dev_deposit(&self, amount: u64) -> Result<()> {

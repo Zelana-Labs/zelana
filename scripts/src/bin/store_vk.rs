@@ -171,9 +171,7 @@ async fn main() -> anyhow::Result<()> {
         _ => {}
     }
 
-    // ========================================================================
     // Step 1: Initialize VK with base curve points
-    // ========================================================================
     print_waiting("Step 1/3: Initializing VK account...");
 
     let mut init_data = Vec::new();
@@ -216,9 +214,7 @@ async fn main() -> anyhow::Result<()> {
         }
     }
 
-    // ========================================================================
     // Step 2: Append IC points in chunks
-    // ========================================================================
     let chunks: Vec<&[[u8; 64]]> = ic.chunks(IC_POINTS_PER_TX).collect();
     let total_chunks = chunks.len();
 
@@ -280,9 +276,7 @@ async fn main() -> anyhow::Result<()> {
         }
     }
 
-    // ========================================================================
     // Step 3: Finalize VK
-    // ========================================================================
     print_waiting("Step 3/3: Finalizing VK...");
 
     let mut finalize_data = Vec::new();
@@ -318,7 +312,7 @@ async fn main() -> anyhow::Result<()> {
         }
     }
 
-    println!("\n✅ VK Configuration Complete:");
+    println!("\n VK Configuration Complete:");
     println!("  VK PDA: {}", vk_pda);
     println!("  IC points: {}", ic.len());
     println!("  Domain: {}", hex::encode(&domain[..6]));

@@ -35,11 +35,11 @@ DB_PATH=/path/to/db cargo run -p debug-db
 ## Layout
 
 ```
-┌────────────────────┬────────────────────┐
-│ Accounts           │ Transactions       │
-│                    ├────────────────────┤
-│                    │ Nullifiers         │
-└────────────────────┴────────────────────┘
+-------------------------------------------
+- Accounts           - Transactions       -
+-                    ----------------------
+-                    - Nullifiers         -
+-------------------------------------------
 ```
 
 Accounts show address and balance (sorted by balance).

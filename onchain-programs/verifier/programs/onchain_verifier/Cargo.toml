@@ -2,7 +2,7 @@
 name = "onchain_verifier"
 version = "0.1.0"
 description = "Created with Anchor"
-edition = "2021"
+edition = { workspace = true }
 
 [lib]
 crate-type = ["cdylib", "lib"]
@@ -22,4 +22,3 @@ client = []
 anchor-lang = "0.31.0"
 hex-literal = "0.4.1"
 solana-bn254 = "3.0.0"
-

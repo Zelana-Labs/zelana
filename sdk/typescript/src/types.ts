@@ -4,9 +4,7 @@
  * These types mirror the Rust API types in core/src/api/types.rs
  */
 
-// ============================================================================
 // Core Types
-// ============================================================================
 
 /** 32-byte array represented as Uint8Array */
 export type Bytes32 = Uint8Array;
@@ -24,9 +22,7 @@ export interface AccountState {
   pendingNonce?: bigint;
 }
 
-// ============================================================================
 // Transaction Types
-// ============================================================================
 
 /** Transaction type enumeration */
 export type TxType = 'deposit' | 'transfer' | 'shielded' | 'withdrawal';
@@ -62,9 +58,7 @@ export interface BatchSummary {
   settledAt?: bigint;
 }
 
-// ============================================================================
 // Request/Response Types
-// ============================================================================
 
 /** Transfer request */
 export interface TransferRequest {
@@ -217,9 +211,7 @@ export interface ScannedNote {
   memo?: string;
 }
 
-// ============================================================================
 // Pagination
-// ============================================================================
 
 /** Pagination parameters */
 export interface PaginationParams {
@@ -235,9 +227,7 @@ export interface PaginatedResponse<T> {
   limit: number;
 }
 
-// ============================================================================
 // Error Types
-// ============================================================================
 
 /** API error response */
 export interface ApiError {
@@ -257,9 +247,7 @@ export class ZelanaError extends Error {
   }
 }
 
-// ============================================================================
 // Dev Mode Types (Testing Only)
-// ============================================================================
 
 /** Dev deposit request - simulates L1 deposit without real indexer */
 export interface DevDepositRequest {

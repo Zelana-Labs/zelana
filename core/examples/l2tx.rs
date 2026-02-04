@@ -59,7 +59,7 @@ async fn main() -> anyhow::Result<()> {
     });
 
     client.send_transaction(signed_tx).await?;
-    println!("✓ Transaction sent");
+    println!(" Transaction sent");
 
     Ok(())
 }
@@ -71,7 +71,7 @@ async fn deposit_to_l2(
     amount: u64,
     nonce: u64,
 ) -> anyhow::Result<()> {
-    println!("🚀 Depositing {} lamports to Bridge...", amount);
+    println!(" Depositing {} lamports to Bridge...", amount);
 
     let mut domain_padded = [0u8; 32];
     domain_padded[..DOMAIN.len()].copy_from_slice(DOMAIN);
@@ -113,7 +113,7 @@ async fn deposit_to_l2(
     );
 
     let sig = rpc.send_and_confirm_transaction(&tx)?;
-    println!("✅ Deposit Confirmed. Sig: {}", sig);
+    println!(" Deposit Confirmed. Sig: {}", sig);
 
     Ok(())
 }
@@ -127,7 +127,7 @@ async fn airdrop_if_needed(rpc: &RpcClient, pubkey: &Pubkey, name: &str) -> anyh
         while !rpc.confirm_transaction(&sig)? {
             tokio::time::sleep(Duration::from_millis(100)).await;
         }
-        println!("{}: ✓ Airdropped", name);
+        println!("{}:  Airdropped", name);
     }
     Ok(())
 }

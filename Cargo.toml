@@ -23,7 +23,7 @@ license = "Apache-2.0"
 edition = "2024"
 
 [workspace.dependencies]
-# --- internal SDK crates ---
+# internal SDK crates 
 zelana-transaction = { path = "sdk/transaction" }
 zelana-signature   = { path = "sdk/signature" }
 zelana-account     = { path = "sdk/account" }
@@ -38,7 +38,7 @@ txblob = { path = "sdk/txblob" }
 prover = { path = "prover" }
 zelana-config = { path = "config" }
 
-# --- external deps ---
+# external deps 
 rocksdb = "0.24.0"
 anyhow = "1.0.100"
 blake3 = "1.8.0"
@@ -53,3 +53,7 @@ thiserror = "2.0.17"
 tokio = { version = "1.48.0", features = ["full"] }
 wincode = "0.2.5"
 x25519-dalek = { version = "2.0.1", features = ["static_secrets"] }
+
+# Package-specific build tweaks (Cargo ignores profiles outside the workspace root).
+[profile.release.package."zelana-ownership-prover"]
+opt-level = "s"

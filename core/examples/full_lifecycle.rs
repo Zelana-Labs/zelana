@@ -29,14 +29,14 @@ async fn main() -> anyhow::Result<()> {
 
     // 1. Setup Identity
     let user = Keypair::new();
-    println!("👤 User Identity: {}", user.pubkey());
+    println!(" User Identity: {}", user.pubkey());
 
     let mut acc_bytes = [0u8; 32];
     acc_bytes.copy_from_slice(user.pubkey().as_ref());
     let my_l2_id = AccountId(acc_bytes);
 
     // 2. Fund L1 Account
-    println!("💸 Airdropping L1 SOL...");
+    println!(" Airdropping L1 SOL...");
     let rpc = RpcClient::new_with_commitment(rpc_url.to_string(), CommitmentConfig::confirmed());
     let sig = rpc.request_airdrop(&user.pubkey(), 2_000_000_000)?;
     while !rpc.confirm_transaction(&sig)? {
@@ -44,7 +44,7 @@ async fn main() -> anyhow::Result<()> {
     }
 
     // 3. DEPOSIT to L2
-    println!("🚀 Depositing 1 SOL to Bridge...");
+    println!(" Depositing 1 SOL to Bridge...");
 
     // Derive PDAs - matching working example exactly
     let mut domain_padded = [0u8; 32];
@@ -93,18 +93,18 @@ async fn main() -> anyhow::Result<()> {
     );
 
     let sig = rpc.send_and_confirm_transaction(&tx)?;
-    println!("✅ Deposit Confirmed on L1. Sig: {}", sig);
+    println!(" Deposit Confirmed on L1. Sig: {}", sig);
 
     // 4. Wait for Indexer
     println!("⏳ Waiting 5s for Sequencer to index...");
     sleep(Duration::from_secs(5)).await;
 
     // 5. Connect to L2
-    println!("🔌 Connecting to Zelana L2...");
+    println!(" Connecting to Zelana L2...");
     let mut client = ZelanaClient::connect(sequencer_url).await?;
 
     // 6. Send L2 Transfer
-    println!("💸 Sending L2 Transfer...");
+    println!(" Sending L2 Transfer...");
 
     let tx_data = TransactionData {
         from: my_l2_id,
@@ -125,7 +125,7 @@ async fn main() -> anyhow::Result<()> {
     };
 
     client.send_transaction(signed_tx).await?;
-    println!("🎉 L2 Transaction Sent! Check Sequencer logs for 'COMMITTED'.");
+    println!(" L2 Transaction Sent! Check Sequencer logs for 'COMMITTED'.");
 
     Ok(())
 }

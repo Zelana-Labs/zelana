@@ -20,10 +20,10 @@ The **prover layer is an untrusted, permissionless compute service** that:
 ---
 ## Core invariants (non-negotiable)
 The prover layer:
-- ❌ does NOT know private inputs (amounts, note secrets, keys)
-- ❌ does NOT choose which notes are spent
-- ❌ does NOT modify tx semantics
-- ❌ does NOT submit invalid state (proofs are verified on-chain)
+-  does NOT know private inputs (amounts, note secrets, keys)
+-  does NOT choose which notes are spent
+-  does NOT modify tx semantics
+-  does NOT submit invalid state (proofs are verified on-chain)
 
 Everything it produces is **cryptographically checked** later.
 

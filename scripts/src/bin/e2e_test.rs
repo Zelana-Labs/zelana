@@ -101,9 +101,7 @@ async fn main() -> anyhow::Result<()> {
     let http_client = reqwest::Client::new();
     let rpc = RpcClient::new_with_commitment(SOLANA.rpc_url, CommitmentConfig::confirmed());
 
-    // ========================================
     // Step 1: Check Sequencer
-    // ========================================
     print_header("Step 1: Check Sequencer");
 
     print_waiting("Connecting to sequencer...");
@@ -134,9 +132,7 @@ async fn main() -> anyhow::Result<()> {
         }
     }
 
-    // ========================================
     // Step 2: Check/Fund L1 Balance
-    // ========================================
     print_header("Step 2: Check L1 Balance");
 
     let l1_balance = rpc.get_balance(&payer.pubkey())?;
@@ -164,9 +160,7 @@ async fn main() -> anyhow::Result<()> {
         print_success("Sufficient L1 balance");
     }
 
-    // ========================================
     // Step 3: Deposit to L2
-    // ========================================
     if !skip_deposit {
         print_header("Step 3: Deposit to L2");
 
@@ -237,9 +231,7 @@ async fn main() -> anyhow::Result<()> {
         print_info("Using --skip-deposit flag");
     }
 
-    // ========================================
     // Step 4: Check L2 Balance
-    // ========================================
     print_header("Step 4: Check L2 Balance");
 
     let account_id = hex::encode(payer.pubkey().to_bytes());
@@ -265,9 +257,7 @@ async fn main() -> anyhow::Result<()> {
         print_info("Account not found on L2 (may not be indexed yet)");
     }
 
-    // ========================================
     // Step 5: Check Batch Status
-    // ========================================
     print_header("Step 5: Check Batch Status");
 
     match http_client
@@ -292,9 +282,7 @@ async fn main() -> anyhow::Result<()> {
     println!("\nℹ️  Note: L2 transfers are submitted via UDP, not HTTP.");
     println!("   For testing transfers, use the UDP client or wait for deposits to be indexed.");
 
-    // ========================================
     // Step 6: Verify Final State
-    // ========================================
     print_header("Step 6: Verify Final State");
 
     // Check sender balance
@@ -320,26 +308,24 @@ async fn main() -> anyhow::Result<()> {
         print_info("Account not yet indexed on L2");
     }
 
-    // ========================================
     // Summary
-    // ========================================
     print_header("Test Summary");
 
-    println!("✅ Sequencer connectivity: PASSED");
+    println!(" Sequencer connectivity: PASSED");
 
     if !skip_deposit {
-        println!("✅ L1 Deposit: PASSED");
+        println!(" L1 Deposit: PASSED");
     }
 
     if balance_before.is_some() {
-        println!("✅ L2 Balance query: PASSED");
+        println!(" L2 Balance query: PASSED");
     } else {
-        println!("⚠️  L2 Balance query: Account not found (deposit may need indexing)");
+        println!("️  L2 Balance query: Account not found (deposit may need indexing)");
     }
 
-    println!("✅ Batch status query: PASSED");
+    println!(" Batch status query: PASSED");
 
-    println!("\n🎉 End-to-end test completed!");
+    println!("\n End-to-end test completed!");
     println!("\nNext steps:");
     println!("  - Wait for batch to be sealed and proven");
     println!(

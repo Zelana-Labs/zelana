@@ -15,9 +15,7 @@
 import type { Bytes32 } from './types';
 import { bytesToHex, hexToBytes } from './utils';
 
-// ============================================================================
 // Types
-// ============================================================================
 
 /**
  * Witness data computed from private inputs
@@ -67,9 +65,7 @@ export interface DelegatedShieldedRequest {
   ephemeralKey: Bytes32;
 }
 
-// ============================================================================
 // WASM Module Interface
-// ============================================================================
 
 /**
  * Interface for the ownership-prover WASM module
@@ -96,9 +92,7 @@ interface OwnershipProverWasm {
   ): boolean;
 }
 
-// ============================================================================
 // OwnershipProver Class
-// ============================================================================
 
 /**
  * OwnershipProver handles client-side ownership proof generation.
@@ -221,9 +215,7 @@ export class OwnershipProver {
     return this.initialized && this.noirCircuit !== null;
   }
 
-  // ==========================================================================
   // Cryptographic Operations (using WASM MiMC)
-  // ==========================================================================
 
   /**
    * Derive public key from spending key
@@ -323,9 +315,7 @@ export class OwnershipProver {
     );
   }
 
-  // ==========================================================================
   // Proof Generation
-  // ==========================================================================
 
   /**
    * Generate an ownership proof
@@ -374,9 +364,7 @@ export class OwnershipProver {
     throw new Error('Proof verification not yet implemented');
   }
 
-  // ==========================================================================
   // Helpers
-  // ==========================================================================
 
   private ensureInitialized(): void {
     if (!this.initialized || !this.wasmModule) {
@@ -385,9 +373,7 @@ export class OwnershipProver {
   }
 }
 
-// ============================================================================
 // Standalone Functions (for use without class)
-// ============================================================================
 
 let globalProver: OwnershipProver | null = null;
 
@@ -415,9 +401,7 @@ export async function computeOwnershipWitness(
   return prover.computeWitness(spendingKey, value, blinding, position);
 }
 
-// ============================================================================
 // Mock Prover (for development/testing without WASM)
-// ============================================================================
 
 /**
  * MockOwnershipProver provides a fake prover for development.
