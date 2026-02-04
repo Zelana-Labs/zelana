@@ -4,26 +4,26 @@
 //!
 //! ```text
 //! ___________________________________________________________________________
-//! _                         Zelana Sequencer                                _
-//! _                                                                         _
-//! _  _______________  ___________________________________________________   _
-//! _  _  HTTP API   _  _              Pipeline Orchestrator               _  _
-//! _  _  (axum)     _  _  ___________  ___________  ___________________  _   _
-//! _  _______________  _  _ Batch   __▶_ Prover __▶_    Settler      _  _ _
-//! _         _         _  _ Manager _  _(MockZK) _  _ (Mock/Solana)   _  _   _
-//! _         ▼         _  ___________  ___________  ___________________  _   _
-//! _  ________________________________________________________________________
-//! _  _                    Transaction Router                               __
-//! _  _  • Transfer execution   • Shielded execution                        __
-//! _  _  • Deposit processing   • Withdrawal processing                     __
-//! _  ________________________________________________________________________
-//! _         _                _                     _                        _
-//! _         ▼                ▼                     ▼                        _
-//! _  _____________  _______________  ____________________________           _
-//! _  _  RocksDB  _  _  Shielded   _  _     Withdrawal Queue     _           _
-//! _  _  (state)  _  _    State    _  _                          _           _
-//! _  _____________  _______________  ____________________________           _
-//! ___________________________________________________________________________
+//! │                         Zelana Sequencer                                │
+//! │                                                                         │
+//! │  ┌─────────────┐  ┌─────────────────────────────────────────────────┐   │
+//! │  │  HTTP API   │  │              Pipeline Orchestrator               │  │
+//! │  │  (axum)     │  │  ┌─────────┐  ┌─────────┐  ┌─────────────────┐  │   │
+//! │  └──────┬──────┘  │  │ Batch   │─▶│ Prover │─▶│    Settler      │  │ │
+//! │         │         │  │ Manager │  │(MockZK) │  │ (Mock/Solana)   │  │   │
+//! │         ▼         │  └─────────┘  └─────────┘  └─────────────────┘  │   │
+//! │  ┌─────────────────────────────────────────────────────────────────────┐│
+//! │  │                    Transaction Router                               ││
+//! │  │  • Transfer execution   • Shielded execution                        ││
+//! │  │  • Deposit processing   • Withdrawal processing                     ││
+//! │  └────────────────────────────────────────────────────────────-────────┘│
+//! │         │                │                     │                        │
+//! │         ▼                ▼                     ▼                        │
+//! │  ┌───────────┐  ┌─────────────┐  ┌──────────────────────────┐           │
+//! │  │  RocksDB  │  │  Shielded   │  │     Withdrawal Queue     │           │
+//! │  │  (state)  │  │    State    │  │                          │           │
+//! │  └───────────┘  └─────────────┘  └──────────────────────────┘           │
+//! |_________________________________________________________________________|
 //! ```
 
 use anyhow::Result;
@@ -36,7 +36,8 @@ use tokio::sync::Mutex;
 
 use crate::api::handlers::ApiState;
 use crate::api::routes::create_router;
-use crate::config::{ZelanaConfig, ZelanaConfigExt};
+use crate::config::ZelanaConfig;
+use crate::config::ZelanaConfigExt;
 use crate::sequencer::{
     IndexerConfig, PipelineService, RocksDbStore, ShieldedState, WithdrawalQueue,
     start_indexer_with_pipeline,
