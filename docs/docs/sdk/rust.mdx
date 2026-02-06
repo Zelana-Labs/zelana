@@ -1,0 +1,75 @@
+---
+title: "Rust Crates"
+description: "Use Zelana’s Rust crates for protocol types, encryption, and UDP transport."
+---
+
+## Overview
+
+The Rust SDK is a set of crates that power the sequencer, prover, and client
+tooling. These crates are designed for low-level integrations and protocol
+implementations.
+
+## Crates
+
+| Crate | Purpose |
+| --- | --- |
+| `zelana-transaction` | Transaction types and signing |
+| `zelana-privacy` | Shielded notes, nullifiers, and encryption helpers |
+| `zelana-threshold` | Threshold encryption primitives |
+| `zelana-account` | Account identifiers and state types |
+| `zelana-pubkey` | Public key helpers |
+| `zelana-signature` | Signature types and verification |
+| `zelana-keypair` | Keypair generation and utilities |
+| `zelana-block` | Block header serialization and parsing |
+| `txblob` | Encrypted transaction blob format |
+| `zephyr` | UDP transport protocol primitives |
+| `zelana-ownership-prover` | Ownership proof helpers |
+
+## Add to Your Project
+
+1. Choose a dependency strategy.
+
+Workspace (this repo):
+
+```toml
+[dependencies]
+zelana-transaction = { workspace = true }
+zelana-privacy = { workspace = true }
+zelana-block = { workspace = true }
+zephyr = { workspace = true }
+```
+
+External path:
+
+```toml
+[dependencies]
+zelana-transaction = { path = "../zelana/sdk/transaction" }
+zelana-privacy = { path = "../zelana/sdk/privacy" }
+zelana-block = { path = "../zelana/sdk/block" }
+zephyr = { path = "../zelana/sdk/zephyr" }
+```
+
+Run `cargo build` to confirm the crates resolve correctly.
+
+## Example: Serialize a Block Header
+
+```rust
+use zelana_block::BlockHeader;
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let header = BlockHeader::genesis();
+    let bytes = header.to_bytes()?;
+    let parsed = BlockHeader::from_bytes(&bytes)?;
+
+    assert_eq!(header, parsed);
+    println!("Block header OK: batch_id={}", parsed.batch_id);
+    Ok(())
+}
+```
+
+You should see `Block header OK: batch_id=0`.
+
+## What’s Next
+
+- Use `zephyr` for UDP transport experiments and low-latency submissions.
+- Use `txblob` and `zelana-privacy` if you are implementing shielded flows.

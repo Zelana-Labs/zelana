@@ -2,13 +2,13 @@
 
 ## Program Overview
 
-**Program ID:** `95sWqtU9fdm19cvQYu94iKijRuYAv3wLqod1pcsSfYth`
+**Program ID:** `8SE6gCijcFQixvDQqWu29mCm9AydN8hcwWh2e2Q6RQgE`
 
 The bridge program is a Solana-to-L2 bridge that supports:
 
 - SOL deposits from users to an L2 domain
 - Sequencer-attested withdrawals from L2 back to Solana
-- Batch state root submissions with ZK proof verification (pending)
+- Batch state root submissions with Groth16 proof verification via the verifier program
 
 ## 1. Account States
 
@@ -28,15 +28,24 @@ The bridge program is a Solana-to-L2 bridge that supports:
 
 **State Diagram:**
 ```
-[NonExistent] ---(Initialize)---> [Initialized]
-                                       |
-                                       | (SubmitBatch)
-                                       v
-                                  [Initialized with updated state_root and batch_index]
-                                       |
-                                       | (repeatable)
-                                       v
-                                      ...
+ __________________________
+| NonExistent               |
+|__________________________|
+            |
+            | Initialize
+            v
+ __________________________
+| Initialized               |
+| state_root = [0; 32]      |
+| batch_index = 0           |
+|__________________________|
+            |
+            | SubmitBatch (verified)
+            v
+ __________________________
+| Updated                   |
+| state_root, batch_index   |
+|__________________________|
 ```
 
 **States:**
@@ -55,15 +64,30 @@ The bridge program is a Solana-to-L2 bridge that supports:
 
 **State Diagram:**
 ```
-[NonExistent] ---(Initialize)---> [Initialized/Active]
-                                       |
-                                       | (Deposit: +lamports)
-                                       v
-                                  [Active with balance]
-                                       |
-                                       | (WithdrawAttested: -lamports)
-                                       v
-                                  [Active with reduced balance]
+ __________________________
+| NonExistent               |
+|__________________________|
+            |
+            | Initialize
+            v
+ __________________________
+| Initialized               |
+| (Vault PDA)               |
+|__________________________|
+            |
+            | Deposit: +lamports
+            v
+ __________________________
+| Active                    |
+| (lamports increase)       |
+|__________________________|
+            |
+            | WithdrawAttested: -lamports
+            v
+ __________________________
+| Active                    |
+| (lamports decrease)       |
+|__________________________|
 ```
 
 **States:**
@@ -89,11 +113,16 @@ The bridge program is a Solana-to-L2 bridge that supports:
 
 **State Diagram:**
 ```
-[NonExistent] ---(Deposit)---> [Initialized/Finalized]
-                                       |
-                                       | (immutable - no further transitions)
-                                       v
-                                   [Permanent]
+ __________________________
+| NonExistent               |
+|__________________________|
+            |
+            | Deposit
+            v
+ __________________________
+| Initialized/Finalized     |
+| (write-once)              |
+|__________________________|
 ```
 
 **States:**
@@ -118,11 +147,16 @@ The bridge program is a Solana-to-L2 bridge that supports:
 
 **State Diagram:**
 ```
-[NonExistent] ---(WithdrawAttested)---> [Used]
-                                            |
-                                            | (immutable - replay protection)
-                                            v
-                                        [Permanent]
+ __________________________
+| NonExistent               |
+|__________________________|
+            |
+            | WithdrawAttested
+            v
+ __________________________
+| Used                      |
+| (replay protected)        |
+|__________________________|
 ```
 
 **States:**
@@ -276,8 +310,10 @@ pub struct WithdrawAttestedParams {
 - `vault_account.key() == derive_vault_pda(program_id, config.domain)`
 - `nullifier_account.key() == derive_nullifier_pda(program_id, domain, nullifier)`
 - `nullifier_account.data_is_empty()` (not already used - replay protection)
-- `nullifier != [0u8; 32]`
-- `domain != [0u8; 32]`
+
+> **Implementation detail:** The recipient account (account index 3) is used
+> directly for the SOL transfer. The `recipient` field inside
+> `WithdrawAttestedParams` is not validated or used.
 
 **State Transitions:**
 
@@ -317,7 +353,9 @@ pub struct WithdrawAttestedParams {
 |-------|------|----------|--------|-------------|
 | 0 | `sequencer` | No | Yes | Authorized sequencer |
 | 1 | `config` | Yes | No | Bridge config to update |
-| 2+ | `recipients` | No | No | Recipient accounts for withdrawal intents |
+| 2 | `verifier_program` | No | No | Verifier program for Groth16 proof checks |
+| 3 | `vk_account` | No | No | Verifying key account used by the verifier |
+| 4+ | `recipients` | No | No | Recipient accounts for withdrawal intents |
 
 **Params (Header):**
 ```rust
@@ -330,9 +368,26 @@ pub struct SubmitBatchHeader {
 }
 ```
 
+> **Implementation detail:** The current on-chain handler skips one extra byte
+> before parsing the header. Clients must include a one-byte padding value after
+> the discriminator so the header parses correctly.
+
 **Variable-length data after header:**
-- `proof: [u8; proof_len]` - ZK proof (currently opaque, verification pending)
+- `proof: [u8; 256]` - Groth16 proof bytes (`proof_len` must equal 256)
+- `public_inputs: [BatchPublicInputs]` - 200-byte public input struct
 - `withdrawals: [WithdrawalRequest; withdrawal_count]` - Withdrawal intents
+
+```rust
+pub struct BatchPublicInputs {
+    pub pre_state_root: [u8; 32],
+    pub post_state_root: [u8; 32],
+    pub pre_shielded_root: [u8; 32],
+    pub post_shielded_root: [u8; 32],
+    pub withdrawal_root: [u8; 32],
+    pub batch_hash: [u8; 32],
+    pub batch_id: u64,
+}
+```
 
 ```rust
 pub struct WithdrawalRequest {
@@ -342,19 +397,26 @@ pub struct WithdrawalRequest {
 ```
 
 **Pre-conditions (Guards):**
-- At least 2 accounts provided
+- At least 4 accounts provided
 - `sequencer` must be a signer
 - `config.is_initialized == 1`
 - `sequencer.key() == config.sequencer_authority`
 - `header.prev_batch_index == config.batch_index` (sequential)
 - `header.new_batch_index == config.batch_index + 1` (increment by 1)
-- `accounts[2..].len() == header.withdrawal_count` (account count matches)
+- `header.proof_len == 256`
+- Public inputs `post_state_root == header.new_state_root`
+- Public inputs `batch_id == header.new_batch_index`
+- `accounts[4..].len() == header.withdrawal_count` (account count matches)
 - For each withdrawal: `recipient_account.key() == withdrawal.recipient`
 - Instruction data is properly formatted
 
 **State Transitions:**
 
-**Config:**
+**Verifier CPI:**
+- Calls verifier program with Groth16 proof + public inputs
+- Fails the instruction if the proof is invalid
+
+**Config (after successful verification):**
 - `state_root = header.new_state_root`
 - `batch_index = header.new_batch_index`
 
@@ -365,99 +427,127 @@ pub struct WithdrawalRequest {
 - `Config.batch_index` incremented
 - For each withdrawal: Log `ZE_WITHDRAW_INTENT:{recipient}:{amount}`
 - Final log: `ZE_BATCH_FINALIZED:{domain}:{batch_index}`
+- Groth16 proof verified via verifier CPI
 
 **Error Conditions:**
 
 | Error | Condition |
 |-------|-----------|
-| `NotEnoughAccountKeys` | Less than 2 accounts |
+| `NotEnoughAccountKeys` | Less than 4 accounts |
 | `MissingRequiredSignature` | Sequencer not a signer |
 | `UninitializedAccount` | Config not initialized |
 | `IncorrectAuthority` | Sequencer not authorized |
-| `InvalidInstructionData` | Data too short, bad prev/new batch index, malformed |
-| `InvalidAccountData` | Recipient count mismatch, recipient key mismatch |
+| `InvalidInstructionData` | Data too short, bad prev/new batch index, invalid proof length, or public input mismatch |
+| `InvalidAccountData` | Recipient count mismatch or recipient key mismatch |
+| *(Verifier CPI error)* | Verifier program rejects the proof or inputs |
 
 ## 3. Complete Flow Diagrams
 
 ### 3.1 Deposit Flow
 
 ```
-User                     Bridge Program                    L2 Sequencer
-  |                            |                                |
-  |-- Deposit(amount, nonce) ->|                                |
-  |                            |                                |
-  |    [Guards]                |                                |
-  |    - User is signer        |                                |
-  |    - amount > 0            |                                |
-  |    - Config initialized    |                                |
-  |    - Vault PDA valid       |                                |
-  |    - Nonce not used        |                                |
-  |                            |                                |
-  |    [Transition]            |                                |
-  |    - Transfer SOL to Vault |                                |
-  |    - Create DepositReceipt |                                |
-  |                            |                                |
-  |<-- DepositReceipt PDA -----|                                |
-  |<-- Log: ZE_DEPOSIT --------|------- [Indexer] ------------->|
-  |                            |                                |
-  |                            |                    [Credit user on L2]
+ __________________________
+| USER SUBMITS DEPOSIT      |
+| Deposit(amount, nonce)    |
+|__________________________|
+            |
+            v
+ __________________________
+| BRIDGE VALIDATES          |
+| - User is signer          |
+| - amount > 0              |
+| - Config initialized      |
+| - Vault PDA valid         |
+| - Nonce not used          |
+|__________________________|
+            |
+            v
+ __________________________
+| BRIDGE TRANSITION         |
+| - Transfer SOL to Vault   |
+| - Create DepositReceipt   |
+| - Log ZE_DEPOSIT           |
+|__________________________|
+            |
+            v
+ __________________________
+| SEQUENCER CREDITS USER    |
+| (Indexer consumes log)    |
+|__________________________|
 ```
 
 ### 3.2 Withdrawal Flow (Attested)
 
 ```
-L2 Sequencer                 Bridge Program                    User
-  |                               |                              |
-  |-- WithdrawAttested(          |                              |
-  |     recipient, amount,        |                              |
-  |     nullifier) -------------->|                              |
-  |                               |                              |
-  |    [Guards]                   |                              |
-  |    - Sequencer is signer      |                              |
-  |    - Sequencer == authority   |                              |
-  |    - amount > 0               |                              |
-  |    - Config initialized       |                              |
-  |    - Vault PDA valid          |                              |
-  |    - Nullifier not used       |                              |
-  |                               |                              |
-  |    [Transition]               |                              |
-  |    - Create UsedNullifier     |                              |
-  |    - Transfer SOL to user     |-------- SOL --------------->|
-  |                               |                              |
-  |<-- Success -------------------|                              |
+ __________________________
+| SEQUENCER SUBMITS         |
+| WithdrawAttested(...)     |
+|__________________________|
+            |
+            v
+ __________________________
+| BRIDGE VALIDATES          |
+| - Sequencer is signer     |
+| - Sequencer == authority  |
+| - amount > 0              |
+| - Config initialized      |
+| - Vault PDA valid         |
+| - Nullifier not used      |
+|__________________________|
+            |
+            v
+ __________________________
+| BRIDGE TRANSITION         |
+| - Create UsedNullifier    |
+| - Transfer SOL to user    |
+|__________________________|
+            |
+            v
+ __________________________
+| USER RECEIVES SOL         |
+|__________________________|
 ```
 
 ### 3.3 Batch Submission Flow
 
 ```
-L2 Sequencer                      Bridge Program
-  |                                    |
-  |-- SubmitBatch(                     |
-  |     prev_batch_index,              |
-  |     new_batch_index,               |
-  |     new_state_root,                |
-  |     proof,                         |
-  |     withdrawals[]) --------------->|
-  |                                    |
-  |    [Guards]                        |
-  |    - Sequencer is signer           |
-  |    - Sequencer == authority        |
-  |    - prev_batch == current_batch   |
-  |    - new_batch == current + 1      |
-  |    - Account count matches         |
-  |    - Recipients match              |
-  |                                    |
-  |    [Note: ZK verification pending] |
-  |                                    |
-  |    [Transition]                    |
-  |    - Update state_root             |
-  |    - Increment batch_index         |
-  |    - Log withdrawal intents        |
-  |                                    |
-  |<-- ZE_BATCH_FINALIZED -------------|
-  |                                    |
-  | (Later: Execute WithdrawAttested   |
-  |  for each logged intent)           |
+ __________________________
+| SEQUENCER SUBMITS BATCH   |
+| SubmitBatch(...)          |
+|__________________________|
+            |
+            v
+ __________________________
+| BRIDGE VALIDATES          |
+| - Sequencer is signer     |
+| - Sequencer == authority  |
+| - prev_batch == current   |
+| - new_batch == current+1  |
+| - Account count matches   |
+| - Recipients match        |
+|__________________________|
+            |
+            v
+ __________________________
+| VERIFY PROOF (CPI)        |
+| - Groth16 proof + inputs  |
+| - Verifier program        |
+|__________________________|
+            |
+            v
+ __________________________
+| BRIDGE TRANSITION         |
+| - Update state_root       |
+| - Increment batch_index   |
+| - Log withdrawal intents  |
+| - Emit ZE_BATCH_FINALIZED |
+|__________________________|
+            |
+            v
+ __________________________
+| LATER: WithdrawAttested   |
+| for each logged intent    |
+|__________________________|
 ```
 
 ## 4. State Transition Summary Table
@@ -528,9 +618,26 @@ L2 Sequencer                      Bridge Program
 
 - **Two-Phase Withdrawal:** SubmitBatch logs withdrawal intents (`ZE_WITHDRAW_INTENT`) but does not execute them. `WithdrawAttested` must be called separately with nullifiers.
 
-- **ZK Verification Pending:** The proof in SubmitBatch is currently opaque (`let _proof = ...`). ZK verification is not yet implemented.
+- **ZK Verification Active:** SubmitBatch performs a CPI to the verifier program and fails if the Groth16 proof is invalid.
 
 - **Single Sequencer:** The system has a single point of trust - the `sequencer_authority`. There is no multi-sig or upgrade mechanism visible in the code.
 
 - **Domain Isolation:** Each domain has its own Config, Vault, and derived PDAs. Multiple independent bridges can coexist.
 
+## Implementation Links (GitHub)
+
+Use these links to jump directly to the implementation files:
+
+- [onchain-programs/bridge/src/lib.rs](https://github.com/zelana-Labs/zelana/blob/main/onchain-programs/bridge/src/lib.rs)
+- [onchain-programs/bridge/src/entrypoint.rs](https://github.com/zelana-Labs/zelana/blob/main/onchain-programs/bridge/src/entrypoint.rs)
+- [onchain-programs/bridge/src/instruction/init.rs](https://github.com/zelana-Labs/zelana/blob/main/onchain-programs/bridge/src/instruction/init.rs)
+- [onchain-programs/bridge/src/instruction/deposit.rs](https://github.com/zelana-Labs/zelana/blob/main/onchain-programs/bridge/src/instruction/deposit.rs)
+- [onchain-programs/bridge/src/instruction/submit_batch.rs](https://github.com/zelana-Labs/zelana/blob/main/onchain-programs/bridge/src/instruction/submit_batch.rs)
+- [onchain-programs/bridge/src/instruction/withdraw.rs](https://github.com/zelana-Labs/zelana/blob/main/onchain-programs/bridge/src/instruction/withdraw.rs)
+- [onchain-programs/bridge/src/state/config.rs](https://github.com/zelana-Labs/zelana/blob/main/onchain-programs/bridge/src/state/config.rs)
+- [onchain-programs/bridge/src/state/vault.rs](https://github.com/zelana-Labs/zelana/blob/main/onchain-programs/bridge/src/state/vault.rs)
+- [onchain-programs/bridge/src/state/depositreceipt.rs](https://github.com/zelana-Labs/zelana/blob/main/onchain-programs/bridge/src/state/depositreceipt.rs)
+- [onchain-programs/bridge/src/state/usernullifier.rs](https://github.com/zelana-Labs/zelana/blob/main/onchain-programs/bridge/src/state/usernullifier.rs)
+- [onchain-programs/verifier/programs/onchain_verifier/src/lib.rs](https://github.com/zelana-Labs/zelana/blob/main/onchain-programs/verifier/programs/onchain_verifier/src/lib.rs)
+- [core/src/sequencer/settlement/settler.rs](https://github.com/zelana-Labs/zelana/blob/main/core/src/sequencer/settlement/settler.rs)
+- [core/src/sequencer/bridge/ingest.rs](https://github.com/zelana-Labs/zelana/blob/main/core/src/sequencer/bridge/ingest.rs)

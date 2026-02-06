@@ -2,18 +2,21 @@
 
 ## 1. Overview
 
-Zephyr is a lightweight, encrypted UDP transport layer for the Zelana Rollup. It is designed to replace HTTP/TCP JSON-RPC for high-frequency trading (HFT) and real-time gaming use cases where latency and Head-of-Line (HoL) blocking are critical.
+Zephyr is a lightweight, encrypted UDP transport layer for the Zelana Rollup. It is designed to
+replace HTTP/TCP JSON-RPC for high-frequency trading (HFT) and real-time gaming use cases where
+latency and Head-of-Line (HoL) blocking are critical. The implementation lives in
+`sdk/zephyr` (crate name: `zephyr`).
 
 ### Source Files and Their Purposes
 
 | File        | Path                                                      | Purpose                                             |
 |-------------|-----------------------------------------------------------|-----------------------------------------------------|
-| README.md   | zelana/sdk/zephyr/README.md              | Protocol specification and documentation            |
-| Cargo.toml  | zelana/sdk/zephyr/Cargo.toml             | Crate dependencies and features                     |
-| lib.rs      | zelana/sdk/zephyr/src/lib.rs             | Module exports and unit tests for handshake/encryption |
-| packet.rs   | zelana/sdk/zephyr/src/packet.rs          | Zero-copy packet parsing and type definitions       |
-| keys.rs     | zelana/sdk/zephyr/src/keys.rs            | X25519 key exchange and ChaCha20-Poly1305 AEAD encryption |
-| client.rs   | zelana/sdk/zephyr/src/client.rs          | Async UDP client with handshake and transaction sending |
+| README.md   | sdk/zephyr/README.md                       | Protocol specification and documentation            |
+| Cargo.toml  | sdk/zephyr/Cargo.toml                      | Crate dependencies and features                     |
+| lib.rs      | sdk/zephyr/src/lib.rs                      | Module exports and unit tests for handshake/encryption |
+| packet.rs   | sdk/zephyr/src/packet.rs                   | Zero-copy packet parsing and type definitions       |
+| keys.rs     | sdk/zephyr/src/keys.rs                     | X25519 key exchange and ChaCha20-Poly1305 AEAD encryption |
+| client.rs   | sdk/zephyr/src/client.rs                   | Async UDP client with handshake and transaction sending |
 
 ---
 
@@ -149,7 +152,7 @@ pub struct SessionKeys {
     aead: ChaCha20Poly1305,      // 256-bit key for AEAD
     base_iv: [u8; 12],           // Base initialization vector
     tx_counter: u64,             // Outgoing message counter
-    rx_counter: u64,             // Incoming message counter (for replay protection)
+    rx_counter: u64,             // Incoming message counter (reserved for replay protection)
 }
 
 impl SessionKeys {
@@ -282,55 +285,10 @@ impl ZelanaClient {
 
 ### Server-Side Session Management
 
-```rust
-/// Manages active secure sessions for connected clients.
-pub struct SessionManager {
-    sessions: DashMap<SocketAddr, ActiveSession>,
-}
-
-#[derive(Debug)]
-pub struct ActiveSession {
-    pub keys: SessionKeys,
-    pub account_id: Option<AccountId>,  // Known after first valid signature
-    pub last_activity: std::time::Instant,
-}
-
-impl SessionManager {
-    pub fn new() -> Self {
-      Self { sessions: DashMap::new() }
-    }
-
-    pub fn insert(&self, addr: SocketAddr, keys: SessionKeys) {
-      self.sessions.insert(addr, ActiveSession {
-        keys,
-        account_id: None,
-        last_activity: std::time::Instant::now(),
-      });
-    }
-
-    pub fn get_mut<F, R>(&self, addr: &SocketAddr, f: F) -> Option<R>
-    where F: FnOnce(&mut ActiveSession) -> R {
-      self.sessions.get_mut(addr).map(|mut entry| f(&mut entry))
-    }
-
-    pub fn remove(&self, addr: &SocketAddr) {
-      self.sessions.remove(addr);
-    }
-
-    /// Remove sessions older than a timeout
-    pub fn retain<F>(&self, mut f: F)
-    where F: FnMut(&SocketAddr, &ActiveSession) -> bool {
-      let keys_to_remove: Vec<SocketAddr> = self.sessions.iter()
-        .filter_map(|entry| {
-            if !f(entry.key(), entry.value()) { Some(*entry.key()) } else { None }
-        })
-        .collect();
-      for key in keys_to_remove {
-        self.sessions.remove(&key);
-      }
-    }
-}
-```
+Server-side session tracking is handled by the sequencer and is still evolving.
+The `zephyr` crate focuses on the client handshake + encryption flow. For
+sequencer-side lifecycle details, see the
+[sequencer state machine documentation](./state-machines/sequencer.md).
 
 ---
 
@@ -339,29 +297,31 @@ impl SessionManager {
 ### Connection to Data Transfer
 
 ```
-CLIENT                                      SERVER
-  |                                           |
-  |-- [1] UDP bind("0.0.0.0:0") ------------->|
-  |-- [2] UDP connect(server_addr) ---------->|
-  |                                           |
-  |-- [3] ClientHello {pubkey: X25519} ----->|  (33 bytes: 0x01 + 32B key)
-  |                                           |
-  |<-- [4] ServerHello {pubkey: X25519} -----|  (33 bytes: 0x02 + 32B key)
-  |                                           |
-  |   [5] Both compute:                       |
-  |       shared = X25519(my_sk, their_pk)    |
-  |       salt = SHA256(client_pk || server_pk)|
-  |       keys = HKDF(shared, salt, "zelana-v2-session")|
-  |                                           |
-  |== SESSION ESTABLISHED ===================|
-  |                                           |
-  |-- [6] AppData {nonce, ciphertext} ------>|  (Fire-and-forget)
-  |   - Plaintext: wincode::serialize(TransactionType::Transfer(tx))
-  |   - Encrypted with ChaCha20-Poly1305     |
-  |   - Nonce = base_iv XOR counter          |
-  |                                           |
-  |<-- [7] (Optional responses) -------------|
-  |                                           |
+|__________|                                   |__________|
+| CLIENT   |                                   | SERVER   |
+|__________|                                   |__________|
+     |                                              |
+     |-- [1] UDP bind("0.0.0.0:0") ---------------->|
+     |-- [2] UDP connect(server_addr) ------------->|
+     |                                              |
+     |-- [3] ClientHello {pubkey: X25519} --------->|  (0x01 + 32B key)
+     |                                              |
+     |<-- [4] ServerHello {pubkey: X25519} ---------|  (0x02 + 32B key)
+     |                                              |
+     |   [5] Both compute:                          |
+     |     shared = X25519(my_sk, their_pk)         |
+     |     salt = SHA256(client_pk || server_pk)    |
+     |     keys = HKDF(shared, salt, "zelana-v2-session") |
+     |                                              |
+     |== SESSION ESTABLISHED =======================|
+     |                                              |
+     |-- [6] AppData {nonce, ciphertext} ---------->|
+     |   - Plaintext: wincode::serialize(TransactionType::Transfer(tx))
+     |   - Encrypted with ChaCha20-Poly1305         |
+     |   - Nonce = base_iv XOR counter              |
+     |                                              |
+     |<-- [7] (Optional responses) -----------------|
+     |                                              |
 ```
 
 ### Transaction Sending
@@ -395,110 +355,23 @@ pub async fn send_transaction(&mut self, tx: SignedTransaction) -> Result<()> {
 
 ### Crate Dependencies
 
-From `zelana/Cargo.toml`:
+From `Cargo.toml` (workspace):
 ```toml
 zephyr = { path = "sdk/zephyr" }
 ```
-From `zelana/core/Cargo.toml`:
+From `core/Cargo.toml`:
 ```toml
 zephyr = { workspace = true }
 ```
 
 ### Usage in Examples
 
-| Example File                                                    | Usage                                 |
-|-----------------------------------------------------------------|---------------------------------------|
-| zelana/core/examples/full_lifecycle.rs         | Full deposit + L2 transfer workflow   |
-| zelana/core/examples/l2tx.rs                   | L2 transaction sending                |
-| zelana/core/examples/bench_throughput.rs       | Throughput benchmarking (10k txs)     |
-| zelana/core/examples/transaction.rs            | Transaction example (commented out Zephyr usage) |
-
-### Server-Side Integration Status
-
-**CRITICAL FINDING:** The sequencer currently uses HTTP ingestion only, not Zephyr/UDP.
-
-From `zelana/core/src/main.rs`:
-```rust
-// Network session manager
-// (used later for Zephyr / UDP)
-let session_manager = Arc::new(SessionManager::new());  // Created but NOT USED
-
-// Spawn ingest server (HTTP)  <-- HTTP only, no UDP!
-tokio::spawn(async move {
-    state_ingest_server(db_clone.clone(), secret, ingest_port).await;
-});
-```
-From `zelana/core/src/sequencer/ingest.rs`:
-
-- Uses HTTP/axum for transaction ingestion at `/submit_tx` endpoint
-- Uses `EncryptedTxBlobV1` from the txblob crate for encryption
-- **Does NOT implement the Zephyr UDP protocol server-side**
-
----
-
-## 8. Reliability Handling
-
-- **UDP-First Architecture:** "Fire-and-Forget" by design
-- **No ACKs/NACKs:** No confirmation packets defined
-- **No Retransmission:** Client does not retry failed sends
-- **No Ordering Guarantees:** Packets may arrive out of order
-
-This is intentional for the HFT use case where latency is more important than guaranteed delivery. Application-level reliability (if needed) must be implemented separately.
-
----
-
-## 9. Limitations and TODOs
-
-### Missing Server-Side Implementation
-
-- **No UDP Server:** The sequencer only has HTTP ingestion via axum/tower
-- **SessionManager Created but Unused:** Initialized in main.rs but never connected to UDP handling
-- **No Handshake Handler:** Server-side ServerHello response not implemented
-
-### Security Considerations
-
-- **Replay Protection Incomplete:** `rx_counter` is tracked but never validated in decrypt:
-  ```rust
-  // Note: verify the nonce > rx_counter.  <-- Comment only, not implemented!
-  pub fn decrypt(&mut self, nonce_bytes: &[u8], ciphertext: &[u8]) -> anyhow::Result<Vec<u8>>
-  ```
-- **Session Timeout:** `SessionManager::retain()` exists but cleanup logic not integrated into main loop
-
-### Code Duplication
-
-- `SessionKeys` is duplicated in:
-  - `zelana/sdk/zephyr/src/keys.rs`
-  - `zelana/core/src/sequencer/session.rs`
-
-### Single TODO Found
-
-From `zelana/core/src/storage/processor.rs`:
-```rust
-// TODO: Update StateStore to support `add_commitment`
-```
-
----
-
-## 10. Summary for Network Stack Integration
-
-### What Works
-
-- Client-side handshake and encryption (fully implemented)
-- Key exchange (X25519 ECDH)
-- Session key derivation (HKDF-SHA256)
-- AEAD encryption (ChaCha20-Poly1305)
-- Nonce generation (WireGuard-style XOR counter)
-- Transaction serialization and sending
-- Session management data structures
-
-### What Needs Implementation
-
-- UDP Server Listener: Accept incoming UDP packets on port 9000
-- Handshake Handler: Parse ClientHello, generate ServerHello, derive keys
-- AppData Handler: Decrypt incoming packets, deserialize transactions
-- Session Lifecycle: Integrate cleanup, bind account IDs after first valid tx
-- Replay Protection: Actually validate nonce > rx_counter
-- Integration with Executor: Route decrypted transactions to execution pipeline
+| Example File                              | Usage                                 |
+|-------------------------------------------|---------------------------------------|
+| core/examples/full_lifecycle.rs           | Full deposit + L2 transfer workflow   |
+| core/examples/l2tx.rs                     | L2 transaction sending                |
+| core/examples/bench_throughput.rs         | Throughput benchmarking (10k txs)     |
+| core/examples/transaction.rs              | Transaction example (Zephyr client)   |
 
 ### Dependencies
 
@@ -514,3 +387,14 @@ wincode = { workspace = true }
 x25519-dalek = { workspace = true, features = ["static_secrets"] }
 zelana-transaction = { workspace = true }
 ```
+
+## Implementation Links (GitHub)
+
+Use these links to jump directly to the implementation files:
+
+- [sdk/zephyr/README.md](https://github.com/zelana-Labs/zelana/blob/main/sdk/zephyr/README.md)
+- [sdk/zephyr/src/lib.rs](https://github.com/zelana-Labs/zelana/blob/main/sdk/zephyr/src/lib.rs)
+- [sdk/zephyr/src/packet.rs](https://github.com/zelana-Labs/zelana/blob/main/sdk/zephyr/src/packet.rs)
+- [sdk/zephyr/src/keys.rs](https://github.com/zelana-Labs/zelana/blob/main/sdk/zephyr/src/keys.rs)
+- [sdk/zephyr/src/client.rs](https://github.com/zelana-Labs/zelana/blob/main/sdk/zephyr/src/client.rs)
+- [core/src/api/udp_server.rs](https://github.com/zelana-Labs/zelana/blob/main/core/src/api/udp_server.rs)

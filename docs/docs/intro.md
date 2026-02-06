@@ -1,47 +1,61 @@
 ---
-sidebar_position: 4
+sidebar_position: 1
+title: Introduction
 ---
 
-# Tutorial Intro
+# Zelana Documentation
 
-Let's discover **Docusaurus in less than 5 minutes**.
+Zelana is a privacy-focused Layer 2 rollup prototype built on Solana. This site documents the
+architecture, state machines, and protocol details that power the stack.
 
-## Getting Started
+## What Exists Today
 
-Get started by **creating a new site**.
+- A Rust sequencer pipeline in `core/` that batches transactions and submits them to Solana
+- Groth16 proving support in `prover/` and the sequencer
+- Solana programs in `onchain-programs/` for the bridge and on-chain verification
+- SDKs in `sdk/` covering privacy primitives, transactions, and the Zephyr UDP transport
 
-Or **try Docusaurus immediately** with **[docusaurus.new](https://docusaurus.new)**.
+## Repository Map
 
-### What you'll need
+- `core/`: Sequencer, batching, settlement, and storage logic
+- `prover/`: Groth16 proof generation tooling
+- `onchain-programs/`: Solana bridge + verifier programs
+- `sdk/`: Rust and TypeScript SDKs (privacy, transactions, transport)
+- `rpc/`, `cli/`, `udp-client/`: Supporting tooling and clients
 
-- [Node.js](https://nodejs.org/en/download/) version 20.0 or above:
-  - When installing Node.js, you are recommended to check all checkboxes related to dependencies.
+## Quickstart (Local Sequencer)
 
-## Generate a new site
-
-Generate a new Docusaurus site using the **classic template**.
-
-The classic template will automatically be added to your project after you run the command:
-
-```bash
-npm init docusaurus@latest my-website classic
-```
-
-You can type this command into Command Prompt, Powershell, Terminal, or any other integrated terminal of your code editor.
-
-The command also installs all necessary dependencies you need to run Docusaurus.
-
-## Start your site
-
-Run the development server:
+1. Start a local Solana test validator:
 
 ```bash
-cd my-website
-npm run start
+surfpool start
 ```
 
-The `cd` command changes the directory you're working with. In order to work with your newly created Docusaurus site, you'll need to navigate the terminal there.
+2. Point the Solana CLI at localnet:
 
-The `npm run start` command builds your website locally and serves it through a development server, ready for you to view at http://localhost:3000/.
+```bash
+solana config set --url http://127.0.0.1:8899
+```
 
-Open `docs/intro.md` (this page) and edit some lines: the site **reloads automatically** and displays your changes.
+3. Build and deploy the bridge program:
+
+```bash
+cd onchain-programs/bridge
+cargo build-sbf
+solana program deploy target/deploy/bridge.so
+```
+
+4. Update the program ID in `onchain-programs/bridge/src/lib.rs` and re-deploy if needed.
+
+5. Run the sequencer:
+
+```bash
+RUST_LOG=info cargo run -p core --release
+```
+
+## Where To Go Next
+
+- Start with the [Architecture Overview](./implementation/architecture.md)
+- Dive into the [State Machines](./implementation/state-machines/index.md)
+- Explore protocol details in the [Zephyr page](./implementation/zephyr.md)
+- Design notes live under [Drafts](./drafts/full-privacy.md)

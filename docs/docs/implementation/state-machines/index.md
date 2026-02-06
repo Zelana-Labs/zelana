@@ -51,57 +51,75 @@ Documents all transaction structures and their lifecycle:
 ## Unified Transaction Lifecycle
 
 ```
-                          -------------------------------------------
-                          -            TRANSACTION FLOW              -
-                          -------------------------------------------
-                                           -
-     -----------------------------------------------------------------------------
-     -                                     -                                     -
-     ▼                                     ▼                                     ▼
------------                          -----------                          -----------
-- Deposit -                          -Transfer -                          -Withdraw -
-- (L1→L2) -                          -Shielded -                          - (L2→L1) -
------------                          -----------                          -----------
-     -                                    -                                    -
-     ▼                                    ▼                                    ▼
----------------                    ---------------                    ---------------
-- Indexed by  -                    - Encrypted   -                    - Signature   -
-- DepositIdx  -                    - Submission  -                    - Verified    -
----------------                    ---------------                    ---------------
-       -                                  -                                  -
-       -----------------------------------------------------------------------
-                          -                                  -
-                          ▼                                  ▼
-                   ---------------                    ---------------
-                   -   PENDING   -                    -  INCLUDED   -
-                   - (in mempool)------------------▶  - (in batch)  -
-                   ---------------                    ---------------
-                                                             -
-                                                             ▼
-                                                      ---------------
-                                                      -  EXECUTED   -
-                                                      -(state diff) -
-                                                      ---------------
-                                                             -
-                          -----------------------------------------------------------------------
-                          -                                  -                                  -
-                          ▼                                  ▼                                  ▼
-                   ---------------                    ---------------                    ---------------
-                   -   PROVED    -                    -  SETTLING   -                    - FINALIZED   -
-                   - (ZK proof)  ------------------▶  -  (on L1)    ------------------▶  - (confirmed) -
-                   ---------------                    ---------------                    ---------------
+ ______________________________
+|        TRANSACTION FLOW      |
+|______________________________|
+
+ ______________________________
+| Sources                       |
+| - Deposit (L1→L2)             |
+| - Transfer / Shielded (L2)    |
+| - Withdraw (L2→L1)            |
+|______________________________|
+               |
+               v
+ ______________________________
+| Submission / Ingest           |
+| - Encrypted blob or signed tx |
+|______________________________|
+               |
+               v
+ ______________________________
+| PENDING (mempool)             |
+|______________________________|
+               |
+               v
+ ______________________________
+| INCLUDED (batch)              |
+|______________________________|
+               |
+               v
+ ______________________________
+| EXECUTED (state diff)         |
+|______________________________|
+               |
+               v
+ ______________________________
+| PROVED -> SETTLING -> FINAL   |
+|______________________________|
 ```
 
 ## Batch Lifecycle
 
 ```
---------------     ----------     -----------     ----------     ------------     -------------
--Accumulating-----▶- Sealed -----▶- Proving -----▶- Proved -----▶- Settling -----▶- Finalized -
---------------     ----------     -----------     ----------     ------------     -------------
-      -                 -              -               -              -                 -
-      -                 -              -               -              -                 -
-   Collect          Freeze          Generate        Proof          Submit           L1
-   transactions     batch           ZK proof        ready          to L1           confirmed
+ ______________________
+|    Accumulating      |
+|______________________|
+           |
+           v
+ ______________________
+|       Sealed         |
+|______________________|
+           |
+           v
+ ______________________
+|       Proving        |
+|______________________|
+           |
+           v
+ ______________________
+|       Proved         |
+|______________________|
+           |
+           v
+ ______________________
+|      Settling        |
+|______________________|
+           |
+           v
+ ______________________
+|      Finalized       |
+|______________________|
 ```
 
 ## Key Invariants
@@ -111,3 +129,15 @@ Documents all transaction structures and their lifecycle:
 3. **Nonce Ordering**: Account nonces must match transaction nonces
 4. **State Root Chain**: Each block's prev_root == previous block's new_root
 5. **Single Sequencer**: Only configured authority can submit batches
+
+## Implementation Links (GitHub)
+
+Use these links to jump directly to the implementation files referenced by the state machine docs:
+
+- [core/src/sequencer/pipeline.rs](https://github.com/zelana-Labs/zelana/blob/main/core/src/sequencer/pipeline.rs)
+- [core/src/sequencer/execution/batch.rs](https://github.com/zelana-Labs/zelana/blob/main/core/src/sequencer/execution/batch.rs)
+- [core/src/sequencer/execution/tx_router.rs](https://github.com/zelana-Labs/zelana/blob/main/core/src/sequencer/execution/tx_router.rs)
+- [onchain-programs/bridge/src/lib.rs](https://github.com/zelana-Labs/zelana/blob/main/onchain-programs/bridge/src/lib.rs)
+- [onchain-programs/verifier/programs/onchain_verifier/src/lib.rs](https://github.com/zelana-Labs/zelana/blob/main/onchain-programs/verifier/programs/onchain_verifier/src/lib.rs)
+- [forge/crates/prover-coordinator/src/core_api.rs](https://github.com/zelana-Labs/zelana/blob/main/forge/crates/prover-coordinator/src/core_api.rs)
+- [sdk/transaction/src/lib.rs](https://github.com/zelana-Labs/zelana/blob/main/sdk/transaction/src/lib.rs)

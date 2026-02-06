@@ -1,11 +1,16 @@
-# Website
+# Documentation Site
 
-This website is built using [Docusaurus](https://docusaurus.io/), a modern static website generator.
+This directory contains the Docusaurus site for Zelana.
 
-## Installation
+## Requirements
+
+- Node.js >= 20 (see `package.json` engines)
+- Yarn classic (v1) or npm
+
+## Install
 
 ```bash
-yarn
+yarn install
 ```
 
 ## Local Development
@@ -14,7 +19,7 @@ yarn
 yarn start
 ```
 
-This command starts a local development server and opens up a browser window. Most changes are reflected live without having to restart the server.
+This starts the dev server with hot reload.
 
 ## Build
 
@@ -22,7 +27,13 @@ This command starts a local development server and opens up a browser window. Mo
 yarn build
 ```
 
-This command generates static content into the `build` directory and can be served using any static contents hosting service.
+Build output goes to `build/`.
+
+## Serve a Build
+
+```bash
+yarn serve
+```
 
 ## Deployment
 
@@ -35,7 +46,8 @@ USE_SSH=true yarn deploy
 Not using SSH:
 
 ```bash
-GIT_USER=<Your GitHub username> yarn deploy
+GIT_USER=<your GitHub username> yarn deploy
 ```
 
-If you are using GitHub pages for hosting, this command is a convenient way to build the website and push to the `gh-pages` branch.
+If you use GitHub Pages for hosting, this command builds the site and pushes to the
+`gh-pages` branch.

@@ -1,8 +1,8 @@
 {
-  "label": "Full privacy workflow",
+  "label": "Full Privacy Workflow",
   "position": 1,
   "link": {
     "type": "generated-index",
-    "description": "See how the workflow is of Zelana"
+    "description": "Phase-by-phase notes on the path to sequencer-blind privacy."
   }
 }

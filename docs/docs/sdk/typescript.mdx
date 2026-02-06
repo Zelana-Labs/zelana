@@ -1,0 +1,122 @@
+---
+title: "TypeScript SDK"
+description: "Use the Zelana TypeScript client to query the sequencer, submit transfers, and track transaction status."
+---
+
+## Overview
+
+The TypeScript SDK provides a high-level client (`ZelanaClient`) and low-level
+API wrapper (`ApiClient`) for the sequencer HTTP API. It also includes helpers
+for shielded transaction utilities and note encryption.
+
+## Install
+
+1. Install the package.
+
+Registry:
+
+```bash
+npm install @zelana/sdk
+```
+
+Local path (from this repo):
+
+```bash
+npm install ../zelana/sdk/typescript
+```
+
+If you install from a local path, the package build runs via `npm run build`
+and requires Bun because the build script uses `bun build`.
+
+2. Build from source (local path only).
+
+```bash
+cd sdk/typescript
+bun install
+bun run build
+```
+
+Verify that `sdk/typescript/dist/index.js` exists before importing the package.
+
+## Quickstart
+
+1. Create a client and check health.
+
+Save the following file as `sdk-quickstart.mjs`:
+
+```javascript sdk-quickstart.mjs
+import { ZelanaClient, Keypair, ZelanaError } from '@zelana/sdk';
+
+const keypair = Keypair.generate();
+const client = new ZelanaClient({
+  baseUrl: 'http://127.0.0.1:8080',
+  keypair,
+});
+
+try {
+  const health = await client.health();
+  console.log('Sequencer healthy:', health.healthy);
+} catch (error) {
+  if (error instanceof ZelanaError) {
+    console.error(`Health check failed: ${error.code} - ${error.message}`);
+    process.exit(1);
+  }
+  throw error;
+}
+```
+
+You should see `Sequencer healthy: true` when the sequencer is running.
+
+2. Submit a transfer and wait for confirmation.
+
+Your sender account must be funded. For local development, use `devDeposit`
+in `DEV_MODE=true`, or complete a deposit flow on L1.
+
+```javascript sdk-quickstart.mjs
+const recipient = Keypair.generate().publicKey;
+const amount = 1_000_000n; // lamports
+
+try {
+  const result = await client.transfer(recipient, amount);
+  console.log('TX Hash:', result.txHash);
+
+  const confirmed = await client.waitForTransaction(result.txHash);
+  console.log('Final status:', confirmed.status);
+} catch (error) {
+  if (error instanceof ZelanaError) {
+    console.error(`Transfer failed: ${error.code} - ${error.message}`);
+    process.exit(1);
+  }
+  throw error;
+}
+```
+
+You should see a transaction hash and a final status of `executed` or `settled`.
+
+## Configuration
+
+Use `ZelanaClient` for common actions and `ApiClient` for raw HTTP access.
+
+- `baseUrl` sets the sequencer API endpoint.
+- `keypair` or `signer` provides transaction signing.
+- `chainId` overrides the default chain ID of `1`.
+- `timeout` and `fetch` (on `ApiClient`) customize network behavior.
+
+If your runtime does not provide `fetch`, pass a custom implementation through
+`ApiClientConfig` or `ZelanaClientConfig`.
+
+## Dev Mode Helpers
+
+The client includes development-only methods for local testing.
+
+These methods require the sequencer to run with `DEV_MODE=true`.
+
+```javascript
+const devDeposit = await client.devDeposit(5_000_000n);
+console.log('Dev deposit:', devDeposit.depositId);
+```
+
+## What’s Next
+
+- Use `ApiClient` for batch and transaction queries when you need raw access.
+- Explore the Rust crates if you are building services or protocol tooling.

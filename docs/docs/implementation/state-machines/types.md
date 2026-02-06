@@ -71,6 +71,11 @@ pub struct PrivateTransaction {
     pub commitment: [u8; 32],      // New note (encrypted hash)
     pub ciphertext: Vec<u8>,       // Encrypted data for recipient
     pub ephemeral_key: [u8; 32],   // ECDH key for shared secret
+    pub nonce: Option<[u8; 12]>,   // AEAD nonce (optional)
+    pub shield_from: Option<[u8; 32]>,
+    pub shield_amount: Option<u64>,
+    pub unshield_to: Option<[u8; 32]>,
+    pub unshield_amount: Option<u64>,
 }
 ```
 
@@ -242,6 +247,17 @@ impl TransactionType {
 }
 ```
 
+## Implementation Links (GitHub)
+
+Use these links to jump directly to the implementation files:
+
+- [sdk/transaction/src/lib.rs](https://github.com/zelana-Labs/zelana/blob/main/sdk/transaction/src/lib.rs)
+- [sdk/transaction/src/bridge.rs](https://github.com/zelana-Labs/zelana/blob/main/sdk/transaction/src/bridge.rs)
+- [sdk/keypair/src/lib.rs](https://github.com/zelana-Labs/zelana/blob/main/sdk/keypair/src/lib.rs)
+- [sdk/txblob/src/types.rs](https://github.com/zelana-Labs/zelana/blob/main/sdk/txblob/src/types.rs)
+- [sdk/txblob/src/crypto.rs](https://github.com/zelana-Labs/zelana/blob/main/sdk/txblob/src/crypto.rs)
+- [core/src/sequencer/execution/tx_router.rs](https://github.com/zelana-Labs/zelana/blob/main/core/src/sequencer/execution/tx_router.rs)
+
 ## 6. Encryption Flow
 
 ### Client-Side Encryption
@@ -280,47 +296,53 @@ fn derive_aead_key(my_secret: &StaticSecret, their_pub: &PublicKey) -> [u8; 32] 
 ### Creation to Finalization Flow
 
 ```
----------------------------------------------------------------------------
--                         CLIENT SIDE                                      -
----------------------------------------------------------------------------
-- 1. Create TransactionData (from, to, amount, nonce, chain_id)           -
-- 2. Sign with Ed25519 → SignedTransaction                                -
-- 3. Encrypt with ChaCha20-Poly1305 → EncryptedTxBlobV1                   -
-- 4. POST to /submit_tx                                                    -
----------------------------------------------------------------------------
-                                    -
-                                    ▼
----------------------------------------------------------------------------
--                       SEQUENCER INGEST                                   -
----------------------------------------------------------------------------
-- 5. Deserialize EncryptedTxBlobV1                                        -
-- 6. Compute tx_hash = SHA256(blob)                                       -
-- 7. Decrypt → SignedTransaction                                          -
-- 8. Validate chain_id                                                     -
----------------------------------------------------------------------------
-                                    -
-                                    ▼
----------------------------------------------------------------------------
--                       EXECUTOR                                           -
----------------------------------------------------------------------------
-- 9. Load sender/receiver state from DB (or cache)                        -
-- 10. Validate: balance >= amount, nonce matches                          -
-- 11. Update in-memory state                                               -
-- 12. Return ExecutionResult with StateDiff                               -
----------------------------------------------------------------------------
-                                    -
-                                    ▼
----------------------------------------------------------------------------
--                       SESSION                                            -
----------------------------------------------------------------------------
-- 13. Push ExecutionResult to session                                      -
-- 14. Persist encrypted blob to DB                                         -
-- 15. When tx_count >= MAX_TX_PER_BLOCK (2):                              -
--     - Compute new_root from state                                        -
--     - Apply state diff to DB                                             -
--     - Close session → ClosedSession                                      -
--     - Store BlockHeader                                                  -
----------------------------------------------------------------------------
+ _________________________________
+| CLIENT SIDE                     |
+| 1. Create TransactionData       |
+|    (from, to, amount, nonce,    |
+|     chain_id)                   |
+| 2. Sign with Ed25519            |
+|    -> SignedTransaction         |
+| 3. Encrypt with ChaCha20-Poly1305|
+|    -> EncryptedTxBlobV1         |
+| 4. POST /submit_tx              |
+|_________________________________|
+                |
+                v
+ _________________________________
+| SEQUENCER INGEST                |
+| 5. Deserialize EncryptedTxBlobV1|
+| 6. Compute tx_hash = SHA256     |
+|    (blob)                       |
+| 7. Decrypt -> SignedTransaction |
+| 8. Validate chain_id            |
+|_________________________________|
+                |
+                v
+ _________________________________
+| EXECUTOR                        |
+| 9. Load sender/receiver state   |
+|    from DB (or cache)           |
+| 10. Validate: balance >= amount |
+|     nonce matches               |
+| 11. Update in-memory state      |
+| 12. Return ExecutionResult with |
+|     StateDiff                   |
+|_________________________________|
+                |
+                v
+ _________________________________
+| SESSION                         |
+| 13. Push ExecutionResult to     |
+|     session                     |
+| 14. Persist encrypted blob to DB|
+| 15. When tx_count >=            |
+|     MAX_TX_PER_BLOCK (2):       |
+|     - Compute new_root          |
+|     - Apply state diff          |
+|     - Close session             |
+|     - Store BlockHeader         |
+|_________________________________|
 ```
 
 ### Block Header Structure

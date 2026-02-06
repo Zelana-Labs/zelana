@@ -2,74 +2,46 @@
 
 ## What is Zelana?
 
-Zelana is a **privacy-focused Layer 2 rollup** built on Solana. It combines:
+Zelana is a **privacy-focused Layer 2 rollup prototype** built on Solana. It combines:
 
-- **Zcash-style shielded transactions** for privacy (nullifiers, commitments, ZK proofs)
-- **Threshold encryption** for MEV resistance (transactions encrypted until ordering is finalized)
-- **Low-latency UDP transport** (Zephyr protocol) for fast transaction submission
-- **ZK rollup settlement** on Solana L1 with Groth16 proofs
+- **Shielded transaction primitives** for privacy (nullifiers, commitments, ZK proofs)
+- **Threshold encryption building blocks** for MEV resistance (transactions encrypted until ordering is finalized)
+- **Low-latency UDP transport** (Zephyr) for fast transaction submission
+- **ZK rollup settlement** on Solana using Groth16 proofs (BN254), with hooks for other proof systems
 
 ## High-Level Architecture
 
 ```
--------------------------------------------------------------------------------
--                              ZELANA L2 ROLLUP                               -
--------------------------------------------------------------------------------
--                                                                              -
--  ------------------------------------------------------------------------   -
--  -                           CLIENT LAYER                                -   -
--  -  ---------------  ---------------  ---------------  ---------------  -   -
--  -  - TypeScript  -  -    React    -  -    Rust     -  -   Zephyr    -  -   -
--  -  -    SDK      -  -  Wallet UI  -  -     CLI     -  - UDP Client  -  -   -
--  -  ---------------  ---------------  ---------------  ---------------  -   -
--  -         ----------------------------------------------------         -   -
--  ------------------------------------------------------------------------   -
--                                      -                                       -
--                    HTTP/REST ----------------- UDP/Zephyr                    -
--                                      ▼                                       -
--  ------------------------------------------------------------------------   -
--  -                          SEQUENCER (core/)                            -   -
--  -                                                                       -   -
--  -  ---------------    ---------------    ---------------------------   -   -
--  -  -   API       ----▶-  Pipeline   ----▶-    Settlement Layer     -   -   -
--  -  -  (Axum)     -    - Orchestrator-    -  --------- -----------  -   -   -
--  -  ---------------    ---------------    -  -Prover - - Settler -  -   -   -
--  -                            -           -  -(ZK)   - -  (L1)   -  -   -   -
--  -                     -------▼-------    -  --------- -----------  -   -   -
--  -  ---------------    -   Batch     -    ---------------------------   -   -
--  -  -  Threshold  ----▶-  Manager    -                                   -   -
--  -  -  Mempool    -    ---------------                                   -   -
--  -  ---------------           -                                          -   -
--  -                     -------▼-------    ---------------------------   -   -
--  -                     -  TxRouter   -    -     Storage Layer       -   -   -
--  -                     - (Execution) -◀--▶-  --------- -----------  -   -   -
--  -                     ---------------    -  -RocksDB- -Shielded -  -   -   -
--  -                                        -  -       - -  State  -  -   -   -
--  -                     ---------------    -  --------- -----------  -   -   -
--  -                     -   Bridge    -    ---------------------------   -   -
--  -                     - ----------- -                                   -   -
--  -                     - -Deposits - -                                   -   -
--  -                     - -Withdraws- -                                   -   -
--  -                     - ----------- -                                   -   -
--  -                     ---------------                                   -   -
--  ------------------------------------------------------------------------   -
--                                      -                                       -
--                              WebSocket (deposits)                            -
--                              Transactions (settlement)                       -
--                                      ▼                                       -
--  ------------------------------------------------------------------------   -
--  -                    SOLANA L1 (onchain-programs/)                      -   -
--  -                                                                       -   -
--  -  ---------------------------    -----------------------------------  -   -
--  -  -     Bridge Program      -    -      Verifier Program           -  -   -
--  -  -  - Deposits             -    -  - Groth16 proof verification   -  -   -
--  -  -  - Withdrawals          -    -  - State root storage           -  -   -
--  -  -  - Batch submission     -    -  - BN254 pairing operations     -  -   -
--  -  ---------------------------    -----------------------------------  -   -
--  -                                                                       -   -
--  ------------------------------------------------------------------------   -
--                                                                              -
--------------------------------------------------------------------------------
+ _______________________________
+|        ZELANA L2 ROLLUP       |
+|_______________________________|
+
+ _______________________________
+|         CLIENT LAYER          |
+| TypeScript SDK | React UI     |
+| Rust CLI      | Zephyr UDP    |
+|_______________________________|
+
+            HTTP/REST + UDP/Zephyr
+                     |
+                     v
+
+ _______________________________
+|       SEQUENCER (core/)       |
+| API -> Pipeline -> Settlement |
+| Threshold Mempool -> Batch    |
+| TxRouter <-> Storage Layer    |
+| Bridge (deposits/withdrawals) |
+|_______________________________|
+
+ WebSocket (deposits) / Transactions (settlement)
+                     |
+                     v
+
+ _______________________________
+| SOLANA L1 (onchain-programs/) |
+| Bridge Program | Verifier     |
+|_______________________________|
 ```
 
 ## Core Components
@@ -109,12 +81,13 @@ Two Solana programs secure the L1 side:
 
 | Crate | Purpose |
 |-------|---------|
-| `zelana-tx` | Transaction types and signing |
+| `zelana-transaction` | Transaction types and signing |
 | `zelana-privacy` | Shielded transactions, notes, nullifiers |
 | `zelana-threshold` | Threshold encryption for MEV resistance |
 | `zelana-block` | Block header structure |
 | `zelana-account` | Account ID and state types |
-| `zelana-zephyr` | Low-latency UDP transport protocol |
+| `txblob` | Encrypted transaction blob format + crypto |
+| `zephyr` | Low-latency UDP transport protocol |
 
 ### 4. Prover (`prover/`)
 
@@ -128,21 +101,28 @@ The ZK prover generates Groth16 proofs (BN254 curve) that:
 **Key Insight: A Block is the finalized form of a Batch**
 
 ```
------------------------------------------------------------------------
--                     BATCH → BLOCK RELATIONSHIP                      -
------------------------------------------------------------------------
--                                                                      -
--   Batch (during processing)          Block (after finalization)     -
--   -------------------------          --------------------------     -
--   - batch_id: u64                    - batch_id: u64 (same!)        -
--   - transactions: Vec<Tx>            - prev_root: [u8; 32]          -
--   - state: BatchState                - new_root: [u8; 32]           -
--   - pre_state_root                   - tx_count: u32                -
--   - post_state_root                  - open_at: u64 (timestamp)     -
--   - diff: BatchDiff                  - flags: u32                   -
--   - proof: Option<BatchProof>        - magic: "ZLNA"                -
--                                       - hdr_version: u16            -
------------------------------------------------------------------------
+ ________________________________
+| Batch (during processing)      |
+| batch_id: u64                  |
+| transactions: Vec<Tx>          |
+| state: BatchState              |
+| pre_state_root                 |
+| post_state_root                |
+| diff: BatchDiff                |
+| proof: Option<BatchProof>      |
+|_______________________________|
+
+ ________________________________
+| Block (after finalization)     |
+| batch_id: u64 (same!)          |
+| prev_root: [u8; 32]            |
+| new_root: [u8; 32]             |
+| tx_count: u32                  |
+| open_at: u64 (timestamp)       |
+| flags: u32                     |
+| magic: "ZLNA"                  |
+| hdr_version: u16               |
+|_______________________________|
 ```
 
 ### Batch Lifecycle
@@ -182,20 +162,22 @@ pub struct BlockHeader {
 The sequencer runs three operations in parallel:
 
 ```
-Time --------------------------------------------------------------▶
+Time ________________________________________________▶
 
-       ---------------
-       -  Batch N    - --- Accumulating transactions
-       - ACCUMULATING-
-       ---------------
-                          ---------------
-                          -  Batch N-1  - --- Generating ZK proof
-                          -   PROVING   -
-                          ---------------
-                                            ---------------
-                                            -  Batch N-2  - --- Submitting to L1
-                                            -  SETTLING   -
-                                            ---------------
+       ________________________
+      |  Batch N              | -> Accumulating transactions
+      |  ACCUMULATING         |
+      |_______________________|
+
+                         ________________________
+                        |  Batch N-1            | -> Generating ZK proof
+                        |  PROVING              |
+                        |_______________________|
+
+                                           ________________________
+                                          |  Batch N-2            | -> Submitting to L1
+                                          |  SETTLING             |
+                                          |_______________________|
 ```
 
 This maximizes throughput by overlapping:
@@ -254,7 +236,7 @@ Zelana supports four transaction types:
 
 ### MEV Resistance
 
-Threshold encryption protects against MEV:
+When enabled, threshold encryption protects against MEV:
 1. Transactions are encrypted with threshold key
 2. Sequencer orders encrypted transactions
 3. After ordering is finalized, threshold is reached
@@ -262,14 +244,25 @@ Threshold encryption protects against MEV:
 
 ## Configuration
 
-Key environment variables:
+Configuration loads in this order:
 
-| Variable | Default | Purpose |
-|----------|---------|---------|
-| `ZELANA_INGEST_PORT` | 8080 | HTTP API port |
-| `ZELANA_DATA_DIR` | `./data` | RocksDB storage path |
-| `SOLANA_RPC_URL` | devnet | L1 RPC endpoint |
-| `BRIDGE_PROGRAM_ID` | - | Bridge program address |
+1. `ZL_CONFIG` (explicit config path)
+2. `./config.toml` (repository root)
+3. `~/.zelana/config.toml`
+
+Environment variables override file values. Common overrides:
+
+| Variable | Purpose |
+|----------|---------|
+| `ZL_DB_PATH` | RocksDB storage path |
+| `ZL_API_HOST` | Sequencer host (HTTP) |
+| `ZL_UDP_PORT` | UDP ingest port |
+| `SOLANA_RPC_URL` | Solana RPC endpoint |
+| `SOLANA_WS_URL` | Solana WebSocket endpoint |
+| `ZL_BRIDGE_PROGRAM` | Bridge program ID |
+| `ZL_VERIFIER_PROGRAM` | Verifier program ID |
+| `ZL_PROVER_MODE` | `mock`, `groth16`, or `noir` |
+| `ZL_SETTLEMENT_ENABLED` | Toggle settlement pipeline |
 
 ## Related Documentation
 
@@ -277,4 +270,20 @@ Key environment variables:
 - [State Machines: Bridge](./state-machines/bridge.md)
 - [State Machines: Prover](./state-machines/prover.md)
 - [Transaction Types](./state-machines/types.md)
-- [Zephyr Protocol](./zyphr.md)
+- [Zephyr Protocol](./zephyr.md)
+
+## Implementation Links (GitHub)
+
+Use these links to jump directly to key architecture files:
+
+- [core/src/main.rs](https://github.com/zelana-Labs/zelana/blob/main/core/src/main.rs)
+- [core/src/sequencer/pipeline.rs](https://github.com/zelana-Labs/zelana/blob/main/core/src/sequencer/pipeline.rs)
+- [core/src/sequencer/execution/batch.rs](https://github.com/zelana-Labs/zelana/blob/main/core/src/sequencer/execution/batch.rs)
+- [core/src/sequencer/execution/tx_router.rs](https://github.com/zelana-Labs/zelana/blob/main/core/src/sequencer/execution/tx_router.rs)
+- [core/src/sequencer/settlement/settler.rs](https://github.com/zelana-Labs/zelana/blob/main/core/src/sequencer/settlement/settler.rs)
+- [core/src/sequencer/settlement/noir_client.rs](https://github.com/zelana-Labs/zelana/blob/main/core/src/sequencer/settlement/noir_client.rs)
+- [core/src/sequencer/bridge/ingest.rs](https://github.com/zelana-Labs/zelana/blob/main/core/src/sequencer/bridge/ingest.rs)
+- [onchain-programs/bridge/src/lib.rs](https://github.com/zelana-Labs/zelana/blob/main/onchain-programs/bridge/src/lib.rs)
+- [onchain-programs/verifier/programs/onchain_verifier/src/lib.rs](https://github.com/zelana-Labs/zelana/blob/main/onchain-programs/verifier/programs/onchain_verifier/src/lib.rs)
+- [forge/crates/prover-coordinator/](https://github.com/zelana-Labs/zelana/tree/main/forge/crates/prover-coordinator)
+- [sdk/zephyr/src/lib.rs](https://github.com/zelana-Labs/zelana/blob/main/sdk/zephyr/src/lib.rs)

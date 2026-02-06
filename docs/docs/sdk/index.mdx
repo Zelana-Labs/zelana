@@ -1,0 +1,30 @@
+---
+title: "SDK Overview"
+description: "Choose the right Zelana SDK and understand the core concepts before you start building."
+---
+
+## Overview
+
+The Zelana SDKs help you build clients, services, and tooling on top of the
+sequencer API and core protocol primitives. Choose the SDK that matches your
+runtime and development workflow.
+
+## SDK Options
+
+- **TypeScript SDK** (`/docs/sdk/typescript`): High-level client for web and
+  Node.js apps, including helpers for transfers, status polling, and shielded
+  transaction utilities.
+- **Rust Crates** (`/docs/sdk/rust`): Low-level crates for protocol types,
+  encryption, and UDP transport used by sequencer and prover components.
+
+## Common Concepts
+
+- **Sequencer API base URL**: HTTP endpoint used by the TypeScript client for
+  health checks, transfers, and status queries.
+- **Lamports**: Amounts are represented as `bigint` values in the TypeScript SDK
+  and `u64` in Rust.
+- **Chain ID**: The TypeScript client defaults to chain ID `1` and allows
+  overrides via client configuration.
+
+> If you are running locally, the sequencer defaults to `http://127.0.0.1:8080`
+> when using `config.toml` from the repository root.

@@ -4,15 +4,63 @@
  */
 
 .heroBanner {
-  padding: 4rem 0;
+  padding: 6rem 0 5rem;
   text-align: center;
   position: relative;
   overflow: hidden;
+  background:
+    radial-gradient(circle at 20% 20%, rgba(20, 83, 78, 0.16), transparent 45%),
+    radial-gradient(circle at 80% 10%, rgba(234, 179, 8, 0.18), transparent 40%),
+    linear-gradient(135deg, #f7f4ee 0%, #f0f6f5 100%);
+}
+
+.heroBanner::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(120deg, rgba(15, 118, 110, 0.12), transparent 45%);
+  opacity: 0.9;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.heroBanner :global(.container) {
+  position: relative;
+  z-index: 1;
+}
+
+.heroTitle {
+  font-size: clamp(2.4rem, 3vw + 1.2rem, 4rem);
+  letter-spacing: -0.02em;
+  margin-bottom: 0.75rem;
+  color: #0f2f2d;
+  animation: fadeUp 600ms ease-out both;
+}
+
+.heroSubtitle {
+  font-size: clamp(1.05rem, 0.6vw + 1rem, 1.4rem);
+  max-width: 38rem;
+  margin: 0 auto 2rem;
+  color: #1f3b39;
+  animation: fadeUp 600ms ease-out both;
+  animation-delay: 80ms;
+}
+
+.heroNote {
+  margin: 1.5rem auto 0;
+  max-width: 40rem;
+  color: rgba(15, 47, 45, 0.7);
+  font-size: 0.95rem;
+  animation: fadeUp 600ms ease-out both;
+  animation-delay: 160ms;
 }
 
 @media screen and (max-width: 996px) {
   .heroBanner {
-    padding: 2rem;
+    padding: 3rem 1.5rem 3.5rem;
+  }
+  .heroSubtitle {
+    margin-bottom: 1.5rem;
   }
 }
 
@@ -20,4 +68,92 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+  animation: fadeUp 600ms ease-out both;
+  animation-delay: 120ms;
+}
+
+.primaryCta {
+  background: #0f2f2d;
+  border-color: #0f2f2d;
+  color: #f7f4ee;
+  box-shadow: 0 14px 30px rgba(15, 47, 45, 0.18);
+}
+
+.primaryCta:hover {
+  background: #13413d;
+  border-color: #13413d;
+  color: #fff;
+}
+
+.secondaryCta {
+  border-color: rgba(15, 47, 45, 0.45);
+  color: #0f2f2d;
+}
+
+.secondaryCta:hover {
+  border-color: #0f2f2d;
+  color: #0f2f2d;
+}
+
+:global([data-theme='dark']) .heroBanner {
+  background:
+    radial-gradient(circle at 20% 20%, rgba(45, 212, 191, 0.18), transparent 45%),
+    radial-gradient(circle at 80% 10%, rgba(251, 191, 36, 0.14), transparent 40%),
+    linear-gradient(135deg, #0c1413 0%, #0f1d1c 100%);
+}
+
+:global([data-theme='dark']) .heroTitle {
+  color: #e6f1ef;
+}
+
+:global([data-theme='dark']) .heroSubtitle {
+  color: rgba(230, 241, 239, 0.8);
+}
+
+:global([data-theme='dark']) .heroNote {
+  color: rgba(230, 241, 239, 0.6);
+}
+
+:global([data-theme='dark']) .primaryCta {
+  background: #2dd4bf;
+  border-color: #2dd4bf;
+  color: #0c1413;
+}
+
+:global([data-theme='dark']) .primaryCta:hover {
+  background: #46e0cd;
+  border-color: #46e0cd;
+  color: #0c1413;
+}
+
+:global([data-theme='dark']) .secondaryCta {
+  border-color: rgba(230, 241, 239, 0.5);
+  color: #e6f1ef;
+}
+
+:global([data-theme='dark']) .secondaryCta:hover {
+  border-color: #e6f1ef;
+  color: #e6f1ef;
+}
+
+@keyframes fadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .heroTitle,
+  .heroSubtitle,
+  .heroNote,
+  .buttons {
+    animation: none;
+  }
 }
