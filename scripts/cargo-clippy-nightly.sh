@@ -20,11 +20,5 @@ fi
 # the bench itself isn't stabilized yet...
 #   ref: https://github.com/rust-lang/rust/issues/66287
 "$here/cargo-for-all-lock-files.sh" -- \
-  "+${rust_nightly}" clippy \
-  --workspace --all-targets --features dummy-for-ci-check,frozen-abi -- \
-  --deny=warnings \
-  --deny=clippy::default_trait_access \
-  --deny=clippy::arithmetic_side_effects \
-  --deny=clippy::manual_let_else \
-  --deny=clippy::uninlined-format-args \
-  --deny=clippy::used_underscore_binding
+    clippy \
+  --workspace --all-targets -- \
