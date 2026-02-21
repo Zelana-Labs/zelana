@@ -41,7 +41,13 @@ jobs:
       RUSTFLAGS: ${{ matrix.os.rustflags }}
     steps:
       - name: Mark repo as safe
-        run: git config --global --add safe.directory $GITHUB_WORKSPACE
+        if: runner.os != 'Windows'
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: Mark repo as safe (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: git config --global --add safe.directory "$env:GITHUB_WORKSPACE"
         
       - if: ${{ contains(matrix.os.container, 'alpine') }}
         run: |
