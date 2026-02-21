@@ -40,6 +40,11 @@ jobs:
     env:
       RUSTFLAGS: ${{ matrix.os.rustflags }}
     steps:
+      - if: ${{ contains(matrix.os.container, 'alpine') }}
+        run: |
+          apk update
+          apk add bash git
+
       - uses: actions/checkout@v6
 
       - uses: mozilla-actions/sccache-action@v0.0.9
