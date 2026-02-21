@@ -40,6 +40,9 @@ jobs:
     env:
       RUSTFLAGS: ${{ matrix.os.rustflags }}
     steps:
+      - name: Mark repo as safe
+        run: git config --global --add safe.directory $GITHUB_WORKSPACE
+        
       - if: ${{ contains(matrix.os.container, 'alpine') }}
         run: |
           apk update
