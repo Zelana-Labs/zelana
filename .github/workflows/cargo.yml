@@ -40,6 +40,11 @@ jobs:
     env:
       RUSTFLAGS: ${{ matrix.os.rustflags }}
     steps:
+      - if: ${{ contains(matrix.os.container, 'alpine') }}
+        run: |
+          apk update
+          apk add bash git
+
       - name: Mark repo as safe
         if: runner.os != 'Windows'
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
@@ -49,11 +54,6 @@ jobs:
         shell: pwsh
         run: git config --global --add safe.directory "$env:GITHUB_WORKSPACE"
         
-      - if: ${{ contains(matrix.os.container, 'alpine') }}
-        run: |
-          apk update
-          apk add bash git
-
       - uses: actions/checkout@v6
 
       - uses: mozilla-actions/sccache-action@v0.0.9
