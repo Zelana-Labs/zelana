@@ -46,10 +46,10 @@ jobs:
         with:
           version: "v0.10.0"
 
-      - name: Setup Rust nightly
+      - name: Setup Rust toolchain
         run: |
-          source ci/rust-version.sh nightly
-          rustup component add clippy --toolchain "$rust_nightly"
+          rustup show
+          rustup component add clippy
 
 
       - name: Run Clippy
