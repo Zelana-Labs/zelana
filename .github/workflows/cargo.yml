@@ -54,8 +54,8 @@ jobs:
 
       - name: Run Clippy
         run: |
-          chmod +x scripts/cargo-clippy.sh
-          scripts/cargo-clippy.sh
+          chmod +x scripts/cargo-clippy-nightly.sh
+          scripts/cargo-clippy-nightly.sh
 
       - name: Build all crates
         run: |
