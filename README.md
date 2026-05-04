@@ -9,6 +9,40 @@
 Before running the sequencer, you must start a **local Solana test validator** and deploy the **bridge program**.
 The sequencer listens to bridge events over a **WebSocket connection**, which requires the validator to be running.
 
+
+**System dependencies**
+```bash
+sudo apt update && sudo apt install \
+  build-essential \
+  pkg-config \
+  libssl-dev \
+  clang \
+  libclang-dev
+```
+
+**Rust toolchain**
+```bash
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+source $HOME/.cargo/env
+```
+
+**Solana CLI**
+```bash
+sh -c "$(curl -sSfL https://release.anza.xyz/stable/install)"
+echo 'export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"' >> ~/.bashrc
+source ~/.bashrc # If using Bash
+solana --version
+agave-install update
+```
+
+**Surfpool**
+```bash
+curl -sL https://run.surfpool.run/ | bash
+source ~/.bashrc # If using Bash
+surfpool --version
+```
+
+---
 ### Start the test validator
 
 ```bash
